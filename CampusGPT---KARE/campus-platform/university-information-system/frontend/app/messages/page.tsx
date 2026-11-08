@@ -54,7 +54,7 @@ const WARDEN_TEMPLATES = [
 export default function MessagesPage() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [active, setActive] = useState<Thread | null>(null);
-  const [role, setRole] = useState("student");
+  const [role, setRole] = useState<string>("student");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [toRole, setToRole] = useState("admin");
@@ -263,7 +263,7 @@ export default function MessagesPage() {
               {toRole === "hostel" && (
                 <p className="text-[11px] text-indigo-700">This goes to the hostel warden inbox for approval / hostel help.</p>
               )}
-              {(role === "faculty" || role === "hod" || role === "school_dean") && (
+              {(role === "faculty" || role === "hod") && (
                 <label className="block text-[11px] text-slate-600">
                   Attachments
                   <input

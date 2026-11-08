@@ -38,7 +38,7 @@ export default function UploadPage() {
     setMessage("");
     setResults([]);
 
-    const outcomes: { name: string; chunks: number; ok: boolean }[] = [];
+    const outcomes: { name: string; chunks: number; ok: boolean; detail?: string }[] = [];
 
     const token = typeof window !== "undefined" ? localStorage.getItem("campus_gpt_token") : null;
 
