@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #7C5AED;
+  --primary-dark: #6B4DD4;
+  --secondary: #5B3AD4;
+  --accent: #F59E0B;
+  --bg-light: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --text-color: #1a1a2e;
+  --font-family: Tahoma, Geneva, Verdana, sans-serif;
+  --font-size-base: 16px;
+  --heading-scale: 1.25;
+  --bg-overlay: 0.88;
+  --bg-image: none;
+  --login-bg-image: none;
+}
+
+body {
+  background-color: var(--bg-light);
+  color: var(--text-color);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+}
+
+.app-themed-bg {
+  background-color: var(--bg-light);
+  background-image:
+    linear-gradient(
+      rgba(255, 255, 255, var(--bg-overlay)),
+      rgba(255, 255, 255, var(--bg-overlay))
+    ),
+    var(--bg-image);
+  background-size: cover;
+  background-attachment: fixed;
+  background-position: center;
+}
+
+.login-themed-bg {
+  background-color: var(--bg-light);
+  background-image:
+    linear-gradient(
+      rgba(255, 255, 255, 0.72),
+      rgba(255, 255, 255, 0.72)
+    ),
+    var(--login-bg-image);
+  background-size: cover;
+  background-position: center;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #e5e7eb;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #7C5AED;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6B4DD4;
+}
+
+/* Cloud floating animations */
+@keyframes cloud-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -20px) scale(1.05); }
+  50% { transform: translate(-20px, -10px) scale(0.95); }
+  75% { transform: translate(-30px, -25px) scale(1.02); }
+}
+
+@keyframes cloud-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-40px, 15px) scale(1.03); }
+  66% { transform: translate(25px, -15px) scale(0.97); }
+}
+
+@keyframes cloud-float-3 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(50px, 20px); }
+}
+
+@keyframes cloud-drift {
+  0% { transform: translateX(-10%) translateY(0); }
+  100% { transform: translateX(10%) translateY(-5%); }
+}
+
+@keyframes cloud-pulse {
+  0%, 100% { opacity: 0.06; transform: scale(1); }
+  50% { opacity: 0.14; transform: scale(1.08); }
+}
+
+.cloud-float-1 { animation: cloud-float-1 20s ease-in-out infinite; opacity: 0.12; }
+.cloud-float-2 { animation: cloud-float-2 25s ease-in-out infinite; opacity: 0.1; }
+.cloud-float-3 { animation: cloud-float-3 18s ease-in-out infinite; opacity: 0.08; }
+.cloud-drift { animation: cloud-drift 30s ease-in-out infinite alternate; }
+.cloud-pulse { animation: cloud-pulse 8s ease-in-out infinite; }
+
+/* Pulse animation for typing indicator */
+@keyframes pulse-dot {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.typing-dot {
+  animation: pulse-dot 1.4s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Agent avatar animations */
+@keyframes agent-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+
+.agent-blink {
+  transform-origin: center;
+  animation: agent-blink 4s infinite;
+}
+
+@keyframes agent-float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes agent-float-delay {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(3deg); }
+}
+
+.agent-float-slow {
+  animation: agent-float-slow 6s ease-in-out infinite;
+}
+
+.agent-float-delay {
+  animation: agent-float-delay 5s ease-in-out infinite 1s;
+}
+
+.agent-bg-orb {
+  will-change: transform;
+}
+
+.agent-bg-grid {
+  background-image:
+    linear-gradient(currentColor 1px, transparent 1px),
+    linear-gradient(90deg, currentColor 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.agent-avatar-glow {
+  animation: agent-glow-pulse 3s ease-in-out infinite;
+}
+
+@keyframes agent-glow-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes agent-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+
+.agent-breathe {
+  transform-origin: center bottom;
+}
+
+@keyframes agent-drift {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(8px); }
+}
+
+.agent-drift-slow {
+  animation: agent-drift 10s ease-in-out infinite;
+}
+
+.agent-drift-delay {
+  animation: agent-drift 12s ease-in-out infinite 2s;
+}
+
+.agent-env-badge {
+  backdrop-filter: blur(8px);
+}
+
+.agent-welcome-card {
+  backdrop-filter: blur(12px);
+}
+
+.agent-platform {
+  animation: agent-glow-pulse 3s ease-in-out infinite;
+}
+
+@keyframes agent-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.agent-picker-active {
+  background-size: 200% 100%;
+  animation: agent-shimmer 4s linear infinite;
+}
+
+/* Admin-only scrolling marquee */
+.admin-marquee {
+  overflow: hidden;
+  white-space: nowrap;
+  width: 100%;
+  padding: 0.4rem 0;
+}
+
+.admin-marquee-track {
+  display: inline-flex;
+  gap: 2.5rem;
+  animation: admin-marquee-scroll 28s linear infinite;
+  padding-left: 100%;
+}
+
+.admin-marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.admin-marquee-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+@keyframes admin-marquee-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@media print {
+  body * { visibility: hidden !important; }
+  #fee-receipt-print, #fee-receipt-print * { visibility: visible !important; }
+  #fee-receipt-print {
+    position: absolute !important;
+    left: 0; top: 0; width: 100%;
+    box-shadow: none !important;
+  }
+}
+
+/* Mobile-first messages + marquee */
+@media (max-width: 768px) {
+  .admin-marquee-item { font-size: 0.72rem; }
+  .messages-mobile-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

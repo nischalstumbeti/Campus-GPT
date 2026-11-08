@@ -1,0 +1,26 @@
+{
+  "campus_gpt": {
+    "label": "Campus GPT",
+    "backend_dir": "backend",
+    "frontend_dir": "frontend",
+    "backend_port": 8002,
+    "frontend_port": 3001,
+    "backend_health": "http://127.0.0.1:8002/health",
+    "frontend_url": "http://127.0.0.1:3001"
+  },
+  "university_information_system": {
+    "label": "University Information System",
+    "root": "campus-platform/university-information-system",
+    "backend_dir": "backend",
+    "frontend_dir": "frontend",
+    "backend_port": 8000,
+    "frontend_port": 3000,
+    "backend_health": "http://127.0.0.1:8000/health",
+    "frontend_url": "http://127.0.0.1:3000"
+  },
+  "startup": {
+    "health_check_timeout_seconds": 120,
+    "health_check_interval_seconds": 1.5,
+    "auto_open_browser": true
+  }
+}

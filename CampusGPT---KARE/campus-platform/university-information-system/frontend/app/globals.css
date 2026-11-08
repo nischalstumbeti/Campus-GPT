@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --brand: #0B2A4A;
+  --brand-dark: #071E36;
+  --accent: #1A4A7A;
+  --gold: #F5C542;
+  --panel: #F4F6F9;
+  --ink: #0F172A;
+  --font-family: Verdana, Tahoma, sans-serif;
+  --font-size-base: 16px;
+  --bg-overlay: 0.9;
+  --bg-image: none;
+}
+
+html,
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+}
+
+body {
+  @apply bg-panel text-ink antialiased font-sans;
+}
+
+.app-themed-bg {
+  background-color: var(--panel);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, var(--bg-overlay)), rgba(255, 255, 255, var(--bg-overlay))),
+    var(--bg-image);
+  background-size: cover;
+  background-attachment: fixed;
+  background-position: center;
+}
+
+.uis-panel {
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--brand) 16%, #e6edf3);
+  overflow: hidden;
+}
+
+.uis-panel-title {
+  background: var(--brand);
+  color: #fff;
+  padding: 0.55rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.uis-table-head {
+  background: color-mix(in srgb, var(--brand) 8%, #fff);
+  color: var(--brand);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-family);
+}
+
+/* Admin-only scrolling marquee */
+.admin-marquee {
+  overflow: hidden;
+  white-space: nowrap;
+  width: 100%;
+  padding: 0.4rem 0;
+}
+
+.admin-marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 2.5rem;
+  animation: admin-marquee-scroll 22s linear infinite;
+}
+
+.admin-marquee:hover .admin-marquee-track {
+  animation-play-state: paused;
+}
+
+.admin-marquee a {
+  text-decoration: underline;
+  pointer-events: auto;
+}
+
+.admin-marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.admin-marquee-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+@keyframes admin-marquee-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}

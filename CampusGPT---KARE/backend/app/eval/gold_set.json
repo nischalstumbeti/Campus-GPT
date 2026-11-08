@@ -1,0 +1,78 @@
+{
+  "suite_name": "campus_gold_v1",
+  "description": "Institutional FAQ gold set for Campus-GPT evaluation (no personal student PII).",
+  "top_k": 5,
+  "cases": [
+    {
+      "id": "faq_identity_01",
+      "agent_type": "reception",
+      "query": "What is the full name of this university and where is it located?",
+      "expected_keywords": ["kalasalingam", "krishnankoil", "tamil"],
+      "reference_answer": "Kalasalingam Academy of Research and Education is located at Krishnankoil, Tamil Nadu."
+    },
+    {
+      "id": "faq_naac_01",
+      "agent_type": "reception",
+      "query": "What is KARE NAAC accreditation grade?",
+      "expected_keywords": ["naac", "a++"],
+      "reference_answer": "KARE has NAAC A++ accreditation."
+    },
+    {
+      "id": "faq_placement_01",
+      "agent_type": "admission",
+      "query": "What is the approximate placement rate mentioned for KARE?",
+      "expected_keywords": ["placement", "92"],
+      "reference_answer": "Campus materials cite about 92% placement rate."
+    },
+    {
+      "id": "faq_hostel_01",
+      "agent_type": "hostel",
+      "query": "Who should I contact for hostel leave and room issues?",
+      "expected_keywords": ["hostel", "warden"],
+      "reference_answer": "Hostel leave and residential issues are handled via the hostel warden / hostel desk."
+    },
+    {
+      "id": "faq_scope_01",
+      "agent_type": "hostel",
+      "query": "What is my CGPA and internal marks for this semester?",
+      "expected_keywords": ["hostel desk", "reception", "campus guide"],
+      "reference_answer": "This is the Hostel desk. I only help with hostel topics — please switch to Reception or Campus Guide for academics.",
+      "expect_refusal": true
+    },
+    {
+      "id": "faq_library_01",
+      "agent_type": "general",
+      "query": "Does the campus have a library and lab facilities?",
+      "expected_keywords": ["library", "lab"],
+      "reference_answer": "Yes, KARE provides library and laboratory facilities for students."
+    },
+    {
+      "id": "faq_admission_01",
+      "agent_type": "admission",
+      "query": "What should I know about admission eligibility documents?",
+      "expected_keywords": ["admission", "document", "eligibility"],
+      "reference_answer": "Admission counseling covers eligibility, required documents, programs, and deadlines."
+    },
+    {
+      "id": "faq_exam_01",
+      "agent_type": "academic",
+      "query": "Where can I get help about exams and academic calendar?",
+      "expected_keywords": ["exam", "academic"],
+      "reference_answer": "Academic operations desk helps with timetable, attendance, exams, and academic calendar guidance."
+    },
+    {
+      "id": "faq_fees_overview_01",
+      "agent_type": "reception",
+      "query": "Give a short overview of fee and scholarship information available on campus guides.",
+      "expected_keywords": ["fee", "scholarship"],
+      "reference_answer": "Reception provides fee and scholarship overview and directs students to the right office for exact dues."
+    },
+    {
+      "id": "faq_consent_01",
+      "agent_type": "general",
+      "query": "Can Campus-GPT invent my attendance percentage if I did not allow consent?",
+      "expected_keywords": ["consent", "not", "invent"],
+      "reference_answer": "No. Personal academic records require consent; the assistant must not invent attendance or marks."
+    }
+  ]
+}

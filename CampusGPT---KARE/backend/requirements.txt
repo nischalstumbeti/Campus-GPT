@@ -1,0 +1,47 @@
+# FastAPI & Server
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+
+# Database
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+aiosqlite==0.19.0
+alembic==1.13.1
+
+# AI & ML (Gemini only)
+google-generativeai>=0.8.0
+faiss-cpu>=1.8.0
+
+# Voice: Speech-to-Text (Whisper, Hugging Face Indian-accent)
+transformers>=4.40.0
+torch>=2.0.0
+accelerate>=0.25.0
+
+# Voice: Text-to-Speech (Indian English)
+edge-tts>=6.1.0
+
+# Audio conversion (Whisper fallback only; ElevenLabs STT needs neither)
+pydub>=0.25.0
+audioop-lts>=0.2.1; python_version>="3.13"
+
+# Document Processing
+pypdf2==3.0.1
+python-multipart==0.0.9
+python-docx==1.1.0
+python-pptx==0.6.23
+
+# Auth & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# OAuth (Google SSO)
+httpx>=0.27.0
+pymongo>=4.7.0
+boto3>=1.34.0
+
+# Utilities
+pydantic[email]>=2.6,<3
+pydantic-settings>=2.1.0
+email-validator>=2.0
+python-dotenv==1.0.1
+pytest==8.1.1

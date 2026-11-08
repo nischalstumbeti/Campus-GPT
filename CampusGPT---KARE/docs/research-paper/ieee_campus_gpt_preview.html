@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Campus-GPT IEEE Draft — Policy-Aware Privacy-Preserving Assistant</title>
+  <style>
+    @page { size: A4; margin: 16mm; }
+    body { font-family: "Times New Roman", Times, serif; font-size: 10pt; line-height: 1.32; max-width: 190mm; margin: 0 auto; padding: 12px 16px 36px; color: #111; }
+    h1 { font-size: 14.5pt; text-align: center; margin: 0 0 6px; }
+    .authors { text-align: center; font-size: 9.5pt; margin-bottom: 12px; }
+    h2 { font-size: 10.5pt; text-transform: uppercase; border-bottom: 1px solid #222; margin: 14px 0 6px; padding-bottom: 2px; }
+    h3 { font-size: 10pt; font-style: italic; margin: 8px 0 4px; }
+    .abstract, .warn { border: 1px solid #bbb; background: #fafafa; padding: 8px 10px; margin: 8px 0 12px; }
+    .warn { background: #fff8e6; border-color: #e6d59a; }
+    figure { margin: 12px auto; text-align: center; page-break-inside: avoid; }
+    figure img { max-width: 100%; border: 1px solid #ddd; }
+    figcaption { font-size: 9pt; text-align: justify; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 8px 0; }
+    th, td { border: 1px solid #333; padding: 3px 5px; vertical-align: top; }
+    th { background: #f0f0f0; }
+    ol.refs { font-size: 9pt; padding-left: 18px; }
+    @media print { .warn { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="warn"><strong>Print:</strong> Chrome → Print → Save as PDF. For camera-ready IEEE, compile <code>ieee_campus_gpt.tex</code> on Overleaf.</div>
+
+  <h1>Campus-GPT: A Policy-Aware and Privacy-Preserving AI Assistant for Personalized University Decision Support</h1>
+  <div class="authors">
+    Author Name<br />
+    Department of Computer Science and Engineering<br />
+    Kalasalingam Academy of Research and Education (KARE), India<br />
+    email@klu.ac.in
+  </div>
+
+  <div class="abstract">
+    <strong>Abstract—</strong>
+    University decision support spans institutional policy documents and highly sensitive personal academic records.
+    This paper presents <em>Campus-GPT</em>, a <strong>working prototype</strong> of a policy-aware, privacy-conscious AI layer
+    integrated with a University Information System (UIS). UIS is the system of record; Campus-GPT answers institutional
+    questions via RAG and personal questions only through a consent-gated integration API, with RBAC and partial ownership ABAC.
+    Heuristic confidence (escalation threshold θ = 0.7) is <strong>not</strong> model accuracy.
+    Formal latency, Precision@k, and answer-accuracy benchmarks are <strong>not yet available</strong> and remain future work.
+  </div>
+  <p><strong>Keywords—</strong> Campus AI, RAG, UIS, consent, privacy, ABAC, multi-agent, Gemini, FAISS</p>
+
+  <h2>I. Introduction</h2>
+  <p>
+    Naive campus LLMs risk inventing personal numbers, over-retrieving without governance, or exposing ERP data.
+    We present a <strong>general university framework</strong> demonstrated at KARE: UIS remains authoritative;
+    Campus-GPT is a multi-agent assistant under consent and policy constraints. This paper describes a working prototype—
+    not an experimentally proven superior system—and does not claim measured accuracy percentages.
+  </p>
+  <p><strong>Contributions:</strong> (1) dual UIS+AI architecture with schema isolation;
+    (2) consent-gated personal data + RBAC + ownership ABAC; (3) multi-agent desks with scope guardrails;
+    (4) policy-aligned workflows (e.g., dual-approval leave); (5) evaluation methodology without invented results.</p>
+
+  <h2>II. Related Work</h2>
+  <p>
+    RAG grounds knowledge-intensive generation [Lewis et al., 2020]. Higher-education GenAI work stresses privacy and adoption risks.
+    Practical campus systems typically combine RBAC with resource ownership (partial ABAC), plus deny-by-default consent.
+  </p>
+
+  <h2>III. System Overview</h2>
+  <figure>
+    <img src="figures/fig1_architecture.png" alt="Architecture" />
+    <figcaption><strong>Fig. 1.</strong> Overall Campus-GPT + UIS architecture with controlled integration and isolated Postgres schemas.</figcaption>
+  </figure>
+  <p>
+    Demonstration ports: UIS 3000/8000, Campus-GPT 3001/8002. Campus-GPT never mounts the UIS DB.
+    Schemas: <code>public</code> (Campus-GPT) vs <code>uis</code> (UIS).
+  </p>
+  <figure>
+    <img src="figures/fig5_roles.png" alt="Roles" />
+    <figcaption><strong>Fig. 2.</strong> Primary stakeholder roles (KARE demonstration).</figcaption>
+  </figure>
+
+  <h2>IV. Privacy, Consent, and Access Control</h2>
+  <figure>
+    <img src="figures/fig4_consent_flow.png" alt="Consent" />
+    <figcaption><strong>Fig. 3.</strong> Consent-gated personal data flow.</figcaption>
+  </figure>
+  <p>
+    Consent scopes default to deny. Cross-student marks requests are rejected and audited as <code>DENIED_ABAC</code>.
+    Faculty class access asserts assigned offerings. ABAC here is a practical fragment, not a full policy engine.
+    KARE OAuth may restrict to <code>klu.ac.in</code> (limited case-study detail).
+  </p>
+
+  <h2>V. Query Processing and Multi-Agent Behavior</h2>
+  <figure>
+    <img src="figures/fig2_rag_pipeline.png" alt="RAG pipeline" />
+    <figcaption><strong>Fig. 4.</strong> Query processing and RAG pipeline (θ = 0.7).</figcaption>
+  </figure>
+  <p>
+    Agent selection changes persona, UI, session history, topic guardrails, and preferred actions—not the base LLM or FAISS index.
+    Models: Gemini Flash; embeddings text-embedding-004 (768-D); FAISS top-k = 5.
+  </p>
+  <p>
+    <strong>Heuristic confidence (not accuracy):</strong>
+    structured UIS ≈ 0.95; RAG with context ≈ 0.85; weak/no context ≈ 0.3; escalate if confidence &lt; 0.7.
+  </p>
+
+  <h2>VI. UIS Capabilities</h2>
+  <figure>
+    <img src="figures/fig3_leave_workflow.png" alt="Leave" />
+    <figcaption><strong>Fig. 5.</strong> Dual-approval hostel leave (faculty + warden); UIS is SoR.</figcaption>
+  </figure>
+
+  <h2>VII. Implementation Stack</h2>
+  <table>
+    <tr><th>Layer</th><th>UIS</th><th>Campus-GPT</th></tr>
+    <tr><td>UI</td><td>Next.js 14, React 18, Tailwind</td><td>Next.js 14, React 18, Tailwind</td></tr>
+    <tr><td>API</td><td>FastAPI</td><td>FastAPI + Gemini/FAISS</td></tr>
+    <tr><td>DB</td><td>Postgres schema <code>uis</code></td><td>Postgres schema <code>public</code></td></tr>
+  </table>
+
+  <h2>VIII. Evaluation Methodology and Measurement Capability</h2>
+  <p>
+    The working prototype now instruments chat latency (<code>latency_ms</code> on each <code>/api/chat</code>)
+    and provides an admin gold-suite harness (<code>POST /api/admin/eval/run</code> / Evaluation UI) reporting
+    avg/min/max/median latency, keyword accuracy, token F1 vs references, and a retrieval keyword-hit@k proxy.
+  </p>
+  <p>
+    These automatic proxies are <strong>not</strong> human-rated accuracy or annotated Precision@K/Recall@K.
+    Numbers must be taken from an executed run—not invented. Formal human evaluation remains future work.
+    The prototype was also validated through functional and security scenarios (consent, ABAC, hostel scope, leave dual-approval).
+  </p>
+
+  <h2>IX. Limitations and Future Work</h2>
+  <p>
+    Uncalibrated confidence; UIS dependency; optional voice vendors; demo seed data.
+    Future: calibrated confidence, hybrid retrieval, multilingual support, stronger retention controls, public campus RAG eval set.
+  </p>
+
+  <h2>X. Conclusion</h2>
+  <p>
+    Campus-GPT is a working prototype of a policy-aware, privacy-preserving AI assistant for personalized university decision support.
+    Formal accuracy, retrieval, and latency benchmarks remain essential next steps.
+  </p>
+
+  <h2>References</h2>
+  <ol class="refs">
+    <li>P. Lewis et al., “Retrieval-augmented generation for knowledge-intensive NLP tasks,” NeurIPS, 2020.</li>
+    <li>E. Kasneci et al., “ChatGPT for good? …,” Learning and Individual Differences, 2023.</li>
+    <li>L. Yan et al., “Practical and ethical challenges of LLMs in education…,” BJET, 2024.</li>
+    <li>V. C. Hu et al., NIST SP 800-162 (ABAC), 2014.</li>
+    <li>J. Johnson et al., “Billion-scale similarity search with GPUs,” IEEE Trans. Big Data, 2021.</li>
+    <li>Google DeepMind, Gemini API documentation, 2024.</li>
+    <li>S. Ramírez, FastAPI documentation, 2024.</li>
+  </ol>
+</body>
+</html>

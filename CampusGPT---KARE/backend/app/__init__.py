@@ -1,0 +1,1 @@
+"""Campus-GPT Backend Application."""

@@ -1,0 +1,36 @@
+# Environment & secrets
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+.eggs/
+
+# Node
+node_modules/
+.next/
+out/
+build/
+
+# Data & DB
+*.db
+data/
+*.faiss
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Launcher logs
+logs/
+
+# OS
+.DS_Store
+Thumbs.db

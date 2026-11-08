@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Campus Platform — Architecture Diagram</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  body { margin: 0; background: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+  header { padding: 18px 24px; border-bottom: 1px solid #1e293b; }
+  header h1 { font-size: 18px; margin: 0; color: #f1f5f9; }
+  header p { margin: 2px 0 0; font-size: 12px; color: #94a3b8; }
+  #container { padding: 24px; display: flex; justify-content: center; }
+  .mermaid { background: #ffffff; border-radius: 12px; padding: 20px; }
+  .legend { padding: 16px 24px; color: #94a3b8; font-size: 13px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🧠 Campus Platform — Architecture</h1>
+    <p>Campus GPT (AI copilot) + University Information System (institutional ERP)</p>
+  </div>
+</header>
+
+<div id="container">
+  <pre class="mermaid">
+flowchart TB
+    USER(["👤 User / Browser"])
+
+    subgraph LAUNCHER["🚀 Campus Platform Launcher (app.py — Tkinter)"]
+        ORCH["Start / health-check / restart / stop"]
+    end
+
+    subgraph CAMPUSGPT["🧠 CAMPUS GPT (frontend :3001 · backend :8001)"]
+        subgraph CG_FE["Frontend — Next.js 14 + React + Tailwind + Mermaid"]
+            CG_UI["Chat · Login · Admin · Upload · Analytics · Recommend"]
+        end
+        subgraph CG_BE["Backend — FastAPI :8001"]
+            CG_API["Routes: auth · chat · upload · voice · recommend · analytics · admin · privacy · copilot"]
+            subgraph CG_AI["AI / RAG core"]
+                RAG["rag_service.py — validate → intent → retrieve → generate"]
+                INTENT["ai/intent.py — knowledge | fact | calculation | recommendation"]
+                EMBED["embeddings.py — Gemini text-embedding-004 (768-d)"]
+                VSTORE["vector_store.py — FAISS IndexFlatL2 + metadata.jsonl"]
+                INGEST["ingestion.py — PDF/DOCX/PPTX/TXT/MD/CSV → chunk → embed"]
+            end
+            GATEWAY["gateway/data_gateway.py — RBAC + ABAC + consent, SQL-only"]
+            PROVIDER["providers/sqlite_academic.py — SIS attendance · marks · CGPA"]
+            MEMORY["memory_service.py — long-term user memory"]
+            VOICE["voice_service.py (Whisper STT) · tts_service.py (edge-tts)"]
+            SUPABASE["supabase_storage.py — optional doc archive"]
+            UISCLIENT["uis_client.py — pulls live UIS academic data"]
+        end
+    end
+
+    subgraph UIS["🏛 UNIVERSITY INFORMATION SYSTEM (frontend :3000 · backend :8000)"]
+        subgraph UIS_FE["Frontend — Next.js 14 + React 18 + Tailwind"]
+            UIS_UI["Academics · Attendance · Marks · Hostel · Leave · Complaints"]
+        end
+        subgraph UIS_BE["Backend — FastAPI :8000 (slowapi rate-limited)"]
+            UIS_API["Routes: auth · student · faculty · admin · hostel · complaints · integration"]
+            UIS_DB[(UIS DB — SQLite uis.db)]
+        end
+    end
+
+    subgraph DATA["🗄 Data Stores"]
+        REL[(Relational DB — SQLite campus_gpt.db / PostgreSQL-ready<br/>users · sessions · memory · docs · logs · escalations)]
+        FAISS[(FAISS Vector Index — backend/data/faiss_index<br/>embeddings + source metadata)]
+        SUPAB[(Supabase Storage (optional) — bucket: campus-documents)]
+    end
+
+    subgraph EXTERNAL["🌐 External Services"]
+        GEMINI["Google Gemini API — gemini-1.5-flash (chat) · text-embedding-004 (embeddings)"]
+        HF["Hugging Face Whisper — bryandts/whisper-base-en-india-accent-svarah"]
+        SMTP["Gmail SMTP — (currently failing — bad app password)"]
+    end
+
+    USER -->|HTTP :3000| UIS_UI
+    USER -->|HTTP :3001| CG_UI
+    USER --> ORCH
+    ORCH -.starts/health-checks.-> CG_UI
+    ORCH -.starts/health-checks.-> CG_BE
+    ORCH -.starts/health-checks.-> UIS_FE
+    ORCH -.starts/health-checks.-> UIS_BE
+
+    CG_UI -->|REST /api/chat etc| CG_API
+    CG_API --> RAG
+    RAG --> INTENT
+    RAG --> EMBED
+    EMBED --> VSTORE
+    INGEST --> EMBED
+    INGEST --> VSTORE
+    RAG -->|retrieved chunks| VSTORE
+    RAG --> GATEWAY
+    GATEWAY --> PROVIDER
+    RAG --> MEMORY
+    CG_API --> VOICE
+    CG_API --> SUPABASE
+    VSTORE --> FAISS
+    GATEWAY --> REL
+    MEMORY --> REL
+    CG_API --> REL
+    CG_BE --> SUPAB
+    CG_API --> UISCLIENT
+
+    GEMINI <-->|chat + embeddings| CG_BE
+    HF <-->|speech-to-text| VOICE
+    SMTP -.->|transactional email| CG_BE
+
+    UISCLIENT -->|HTTP /api/integration :8000| UIS_API
+    UIS_API --> UIS_DB
+
+    classDef fe fill:#0ea5e9,stroke:#0369a1,color:#fff,font-weight:bold;
+    classDef be fill:#7c3aed,stroke:#5b21b6,color:#fff;
+    classDef ai fill:#059669,stroke:#065f46,color:#fff;
+    classDef data fill:#d97706,stroke:#92400e,color:#fff;
+    classDef ext fill:#475569,stroke:#1e293b,color:#fff;
+    classDef launcher fill:#dc2626,stroke:#991b1b,color:#fff;
+    class CG_UI,UIS_UI fe;
+    class CG_BE,UIS_BE be;
+    class RAG,INTENT,EMBED,VSTORE,INGEST,MEMORY,VOICE,GATEWAY,PROVIDER ai;
+    class REL,FAISS,UIS_DB,SUPAB data;
+    class GEMINI,HF,SMTP ext;
+    class ORCH launcher;
+  </pre>
+</div>
+
+<div class="legend">
+  <span><span class="swatch" style="background:#0ea5e9"></span>Frontends</span> &nbsp;
+  <span><span class="swatch" style="background:#7c3aed"></span>Backends</span> &nbsp;
+  <span><span class="swatch" style="background:#059669"></span>AI / RAG core</span> &nbsp;
+  <span><span class="swatch" style="background:#d97706"></span>Data stores</span> &nbsp;
+  <span><span class="swatch" style="background:#475569"></span>External services</span> &nbsp;
+  <span><span class="swatch" style="background:#dc2626"></span>Launcher</span>
+</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'base', securityLevel: 'loose' });
+</script>
+</body>
+</html>
+
