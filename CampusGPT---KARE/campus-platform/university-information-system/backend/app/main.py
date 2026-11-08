@@ -306,6 +306,21 @@ async def lifespan(app: FastAPI):
                 pass
     except Exception as exc:
         print(f"UIS schema init warning: {exc}")
+    # Free Render disks start empty. Load the campus123 demo accounts once
+    # per empty database so live login works after every cold start.
+    try:
+        from sqlalchemy import func, select
+
+        from app.database import SessionLocal
+        from app.seed.run_seed import seed
+
+        async with SessionLocal() as db:
+            user_count = await db.scalar(select(func.count()).select_from(User))
+        if not user_count:
+            print("UIS demo seed: no users, loading campus123 accounts")
+            await seed()
+    except Exception as exc:
+        print(f"UIS demo seed skipped: {exc}")
     try:
         from app.seed.ensure_fees import ensure_fees
 
