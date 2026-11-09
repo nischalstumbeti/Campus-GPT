@@ -82,6 +82,7 @@ _cors_origins = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://campus-gpt-ecru.vercel.app",
+    "https://campusgpt-ai.vercel.app",
 }
 if _settings.FRONTEND_URL:
     _cors_origins.add(_settings.FRONTEND_URL.rstrip("/"))
