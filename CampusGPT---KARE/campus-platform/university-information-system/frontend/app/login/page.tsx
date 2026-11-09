@@ -4,11 +4,12 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminMarquee from "@/components/AdminMarquee";
 import { useBranding, useBrandingReady } from "@/components/ThemeProvider";
+import { API } from "@/lib/api";
 import { sanitizeNoticeHtml } from "@/lib/noticeHtml";
 
-const API = process.env.NEXT_PUBLIC_UIS_API_URL || "http://localhost:8000";
+const LOGIN_TIMEOUT_MS = API.startsWith("http://localhost") || API.startsWith("http://127.0.0.1") ? 12000 : 60000;
 
-async function loginRequest(username: string, password: string, timeoutMs = 12000) {
+async function loginRequest(username: string, password: string, timeoutMs = LOGIN_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -26,13 +27,11 @@ async function loginRequest(username: string, password: string, timeoutMs = 1200
     return data as { access_token: string; role: string; full_name: string; username: string };
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(
-        `UIS API timed out (${API}). Start the backend: cd university-information-system/backend && python run.py`
-      );
+      throw new Error(`UIS API timed out (${API}). The server may be waking up. Try again in a few seconds.`);
     }
     if (err instanceof TypeError) {
       throw new Error(
-        `Cannot reach UIS API at ${API}. Make sure the backend is running on port 8000.`
+        `Cannot reach UIS API${API ? ` at ${API}` : ""}. It may still be waking up. Try again in a few seconds.`
       );
     }
     throw err;

@@ -33,7 +33,24 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        # Keep these even when CORS_ORIGINS on the host replaces the default.
+        # The live CIMS login page calls this API from the browser.
+        required = (
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+            "https://cims-campusgpt.vercel.app",
+            "https://cims-seven.vercel.app",
+            "https://campus-gpt-ecru.vercel.app",
+            "https://campusgpt-ai.vercel.app",
+        )
+        origins: list[str] = []
+        for origin in (*self.cors_origins.split(","), *required):
+            origin = origin.strip().rstrip("/")
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
 
 
 @lru_cache

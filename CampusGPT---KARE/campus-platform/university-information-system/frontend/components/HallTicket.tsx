@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getToken } from "@/lib/api";
-import { apiFetch } from "@/lib/api";
+import { API, apiFetch, getToken } from "@/lib/api";
 
 type Exam = { code: string; course: string; type: string; date: string; start: string; venue: string; attendance?: number };
 type Held = { code: string; course: string; attendance: number; reason: string };
@@ -28,8 +27,6 @@ type Ticket = {
   exams?: Exam[];
   withheld?: Held[];
 };
-
-const API = process.env.NEXT_PUBLIC_UIS_API_URL || "http://localhost:8000";
 
 async function fetchPdf() {
   const token = getToken();

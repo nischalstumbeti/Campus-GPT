@@ -1,9 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { API } from "@/lib/api";
 import { applyBrandingToDocument, DEFAULT_BRANDING, type Branding } from "@/lib/branding";
-
-const API = process.env.NEXT_PUBLIC_UIS_API_URL || "http://localhost:8000";
 
 type BrandingState = { branding: Branding; ready: boolean };
 

@@ -1,4 +1,12 @@
-const API = process.env.NEXT_PUBLIC_UIS_API_URL || "http://localhost:8000";
+function resolveApiBase(): string {
+  const configured = process.env.NEXT_PUBLIC_UIS_API_URL || "http://localhost:8000";
+  if (typeof window === "undefined") return configured;
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") return configured;
+  return "";
+}
+
+export const API = resolveApiBase();
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;

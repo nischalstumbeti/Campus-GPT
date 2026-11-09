@@ -3,7 +3,7 @@
 import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
-import { apiFetch, getToken } from "@/lib/api";
+import { API, apiFetch, getToken } from "@/lib/api";
 import { noticeText, safeNoticeHref, sanitizeNoticeHtml } from "@/lib/noticeHtml";
 import {
   applyBrandingToDocument,
@@ -13,7 +13,6 @@ import {
   type Branding,
 } from "@/lib/branding";
 
-const API = process.env.NEXT_PUBLIC_UIS_API_URL || "http://localhost:8000";
 type MarqueeItem = {
   id: number;
   icon: string;

@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API } from "@/lib/api";
 import { sanitizeNoticeHtml } from "@/lib/noticeHtml";
 
 type Item = { id: number; description: string };
-
-const API = process.env.NEXT_PUBLIC_UIS_API_URL || "http://localhost:8000";
 
 /** Campus-wide scrolling notices from Admin CMS. Visible on the sign-in page and every role. */
 export default function AdminMarquee() {
