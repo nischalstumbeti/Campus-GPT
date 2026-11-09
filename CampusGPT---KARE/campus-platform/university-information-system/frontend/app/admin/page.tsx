@@ -14,12 +14,23 @@ type EmailStatus = {
   from_header: string;
 };
 
+type KeepAwake = {
+  enabled: boolean;
+  interval_minutes: number;
+  targets: { name: string; url: string }[];
+  last_run_at: string | null;
+  last_results: { name: string; url: string; ok: boolean; detail: string }[];
+};
+
 export default function AdminDashboard() {
   const [data, setData] = useState<any>(null);
   const [emailStatus, setEmailStatus] = useState<EmailStatus | null>(null);
   const [testTo, setTestTo] = useState("99230041300@klu.ac.in");
   const [mailTesting, setMailTesting] = useState(false);
   const [mailMsg, setMailMsg] = useState("");
+  const [keepAwake, setKeepAwake] = useState<KeepAwake | null>(null);
+  const [keepSaving, setKeepSaving] = useState(false);
+  const [keepMsg, setKeepMsg] = useState("");
 
   const load = () => {
     apiFetch("/api/v1/admin/dashboard").then(setData).catch(() => setData(null));
@@ -29,6 +40,26 @@ export default function AdminDashboard() {
         if (d.from_email) setTestTo((prev) => prev || d.from_email);
       })
       .catch(() => setEmailStatus(null));
+    apiFetch<KeepAwake>("/api/v1/admin/keep-awake")
+      .then(setKeepAwake)
+      .catch(() => setKeepAwake(null));
+  };
+
+  const setKeepAwakeEnabled = async (enabled: boolean) => {
+    setKeepSaving(true);
+    setKeepMsg("");
+    try {
+      const next = await apiFetch<KeepAwake>("/api/v1/admin/keep-awake", {
+        method: "PUT",
+        body: JSON.stringify({ enabled }),
+      });
+      setKeepAwake(next);
+      setKeepMsg(enabled ? "Calling both Render servers now, then every 5 minutes." : "Keep-awake is off.");
+    } catch (e) {
+      setKeepMsg(e instanceof Error ? e.message : "Could not save");
+    } finally {
+      setKeepSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -120,6 +151,43 @@ export default function AdminDashboard() {
             {mailMsg}
           </p>
         )}
+      </div>
+
+      <div className="mb-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Render servers</p>
+            <p className="text-lg font-semibold text-slate-800">Keep CIMS and Campus GPT awake</p>
+            <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+              Free servers sleep when nobody visits. Turn this on and this admin API calls both Render
+              addresses every 5 minutes.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setKeepAwakeEnabled(!keepAwake?.enabled)}
+            disabled={keepSaving || !keepAwake}
+            className={`px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-60 ${
+              keepAwake?.enabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-800"
+            }`}
+          >
+            {keepSaving ? "Saving…" : keepAwake?.enabled ? "On" : "Off"}
+          </button>
+        </div>
+        <ul className="mt-3 text-sm text-slate-600 space-y-1">
+          {(keepAwake?.targets || []).map((target) => (
+            <li key={target.url}>
+              {target.name}: {target.url}
+            </li>
+          ))}
+        </ul>
+        {keepAwake?.last_results?.length ? (
+          <p className="mt-2 text-sm text-slate-700">
+            Last check {keepAwake.last_run_at ? new Date(keepAwake.last_run_at).toLocaleTimeString() : ""}:{" "}
+            {keepAwake.last_results.map((r) => `${r.name} ${r.ok ? "ok" : r.detail}`).join(" · ")}
+          </p>
+        ) : null}
+        {keepMsg && <p className="mt-2 text-sm text-slate-700">{keepMsg}</p>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

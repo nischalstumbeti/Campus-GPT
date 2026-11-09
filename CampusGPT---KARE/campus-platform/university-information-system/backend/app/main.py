@@ -39,6 +39,7 @@ from app.models import (  # noqa: F401 — register metadata
     MessageThread,
     Program,
     Room,
+    RuntimeSetting,
     StudentFee,
     StudentProfile,
     TimetableSlot,
@@ -56,6 +57,7 @@ from app.routes import (
     hall_ticket,
     hostel,
     integration,
+    keep_awake,
     integrations,
     marquee,
     messages,
@@ -406,7 +408,14 @@ async def lifespan(app: FastAPI):
             await db.commit()
     except Exception as exc:
         print(f"UIS consent backfill skipped: {exc}")
-    yield
+    from app.services.keep_awake import start as start_keep_awake
+    from app.services.keep_awake import stop as stop_keep_awake
+
+    start_keep_awake()
+    try:
+        yield
+    finally:
+        await stop_keep_awake()
 
 
 _prod = settings.environment.lower() == "production"
@@ -449,6 +458,7 @@ app.include_router(integrations.router)
 app.include_router(exam_applications.router)
 app.include_router(hall_ticket.router)
 app.include_router(integration.router)
+app.include_router(keep_awake.router)
 
 
 @app.get("/health")
