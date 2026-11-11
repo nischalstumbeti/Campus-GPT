@@ -706,6 +706,7 @@ class SlipTemplate(Base):
     __tablename__ = "slip_templates"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), default="general", index=True)
     institution: Mapped[str] = mapped_column(String(160), default="Kalasalingam Academy of Research and Education")
     document_title: Mapped[str] = mapped_column(String(80), default="ACKNOWLEDGEMENT")
     subtitle: Mapped[str] = mapped_column(String(160), default="University Information System")
@@ -750,6 +751,76 @@ class FormResponse(Base):
     answers_json: Mapped[str] = mapped_column(Text, default="{}")
     ack_number: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PeopleGroup(Base):
+    """A label for people. A group may sit inside another group."""
+
+    __tablename__ = "people_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("people_groups.id"), nullable=True, index=True)
+    purpose: Mapped[str] = mapped_column(String(200), default="")
+
+
+class PeopleGroupMember(Base):
+    __tablename__ = "people_group_members"
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_people_group_member"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("people_groups.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+
+class Community(Base):
+    __tablename__ = "communities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    purpose: Mapped[str] = mapped_column(String(300), default="")
+    manager_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class CommunityMember(Base):
+    __tablename__ = "community_members"
+    __table_args__ = (UniqueConstraint("community_id", "user_id", name="uq_community_member"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    community_id: Mapped[int] = mapped_column(ForeignKey("communities.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+
+class CommunityPost(Base):
+    __tablename__ = "community_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    community_id: Mapped[int] = mapped_column(ForeignKey("communities.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(16), default="message")
+    title: Mapped[str] = mapped_column(String(160), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    link_url: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PollOption(Base):
+    __tablename__ = "poll_options"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("community_posts.id"), index=True)
+    label: Mapped[str] = mapped_column(String(120))
+
+
+class PollVote(Base):
+    __tablename__ = "poll_votes"
+    __table_args__ = (UniqueConstraint("post_id", "user_id", name="uq_poll_vote"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("community_posts.id"), index=True)
+    option_id: Mapped[int] = mapped_column(ForeignKey("poll_options.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
 
 class RuntimeSetting(Base):

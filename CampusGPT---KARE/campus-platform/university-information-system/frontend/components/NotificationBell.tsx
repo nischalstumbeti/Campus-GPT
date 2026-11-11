@@ -17,6 +17,7 @@ type Note = {
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Note[]>([]);
+  const [forms, setForms] = useState<{ id: number; title: string; remaining: number | null }[]>([]);
   const [unread, setUnread] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -30,6 +31,9 @@ export default function NotificationBell() {
         setItems([]);
         setUnread(0);
       });
+    apiFetch<{ items: { id: number; title: string; remaining: number | null }[] }>("/api/v1/forms/open")
+      .then((d) => setForms(d.items || []))
+      .catch(() => setForms([]));
   }, []);
 
   useEffect(() => {
@@ -77,8 +81,23 @@ export default function NotificationBell() {
               </button>
             )}
           </div>
-          {!items.length && <p className="px-3 py-4 text-sm text-slate-500">No notifications yet.</p>}
-          {items.map((n) => (
+          <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Forms</p>
+          {forms.map((form) => (
+            <Link key={form.id} href="/student/forms" onClick={() => setOpen(false)} className="block px-3 py-2 border-b border-slate-50 hover:bg-slate-50">
+              <p className="text-sm font-medium text-[#0B2A4A]">{form.title}</p>
+              <p className="text-xs text-slate-600">{form.remaining === null ? "Open to fill" : form.remaining === 0 ? "Already submitted" : `${form.remaining} response left`}</p>
+            </Link>
+          ))}
+          {items.filter((n) => n.kind === "form").map((n) => (
+            <Link key={n.id} href={n.link || "/student/forms"} onClick={() => setOpen(false)} className={`block px-3 py-2 border-b border-slate-50 hover:bg-slate-50 ${n.read ? "" : "bg-amber-50/60"}`}>
+              <p className="text-sm font-medium text-[#0B2A4A]">{n.title}</p>
+              <p className="text-xs text-slate-600 line-clamp-2">{n.body}</p>
+            </Link>
+          ))}
+          {!forms.length && !items.some((n) => n.kind === "form") ? <p className="px-3 py-2 text-xs text-slate-500">No form is waiting for you.</p> : null}
+          <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Other notices</p>
+          {!items.filter((n) => n.kind !== "form").length && <p className="px-3 py-3 text-sm text-slate-500">No other notices.</p>}
+          {items.filter((n) => n.kind !== "form").map((n) => (
             <Link
               key={n.id}
               href={n.link || "/messages"}

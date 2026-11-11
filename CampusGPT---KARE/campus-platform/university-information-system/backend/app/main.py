@@ -57,6 +57,7 @@ from app.routes import (
     directory,
     hall_ticket,
     forms,
+    people,
     hostel,
     integration,
     keep_awake,
@@ -302,6 +303,22 @@ async def _ensure_ack_columns(conn):
         await conn.execute(text("ALTER TABLE acknowledgements ADD COLUMN ref_key VARCHAR(64) DEFAULT ''"))
 
 
+async def _ensure_slip_kind(conn):
+    from sqlalchemy import text
+
+    name = getattr(getattr(conn, "dialect", None), "name", "") or ""
+    if name != "sqlite":
+        return
+
+    def _cols(sync_conn):
+        rows = sync_conn.execute(text("PRAGMA table_info(slip_templates)")).fetchall()
+        return {row[1] for row in rows}
+
+    existing = await conn.run_sync(lambda sync_conn: _cols(sync_conn))
+    if existing and "kind" not in existing:
+        await conn.execute(text("ALTER TABLE slip_templates ADD COLUMN kind VARCHAR(24) DEFAULT 'general'"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.environment.lower() == "production":
@@ -330,6 +347,7 @@ async def lifespan(app: FastAPI):
                 await _ensure_application_approval_columns(conn)
                 await _ensure_hall_ticket_columns(conn)
                 await _ensure_ack_columns(conn)
+                await _ensure_slip_kind(conn)
             except Exception:
                 pass
     except Exception as exc:
@@ -487,6 +505,7 @@ app.include_router(integrations.router)
 app.include_router(exam_applications.router)
 app.include_router(hall_ticket.router)
 app.include_router(forms.router)
+app.include_router(people.router)
 app.include_router(integration.router)
 app.include_router(keep_awake.router)
 

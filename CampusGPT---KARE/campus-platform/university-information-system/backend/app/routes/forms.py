@@ -4,12 +4,12 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import FormGrant, FormResponse, ServiceForm, SlipTemplate, User
+from app.models import Acknowledgement, AppNotification, FormGrant, FormResponse, ServiceForm, SlipTemplate, StudentProfile, User
 from app.security.auth import get_current_user, require_roles
 from app.services.acknowledge import issue_acknowledgement
 from app.services.confirm import PhraseIn, require_phrase
@@ -21,6 +21,11 @@ Staff = require_roles(
 Admins = {"university_admin", "admin", "super_admin", "developer", "operator"}
 AUDIENCES = {"all_students", "listed", "any_signed_in"}
 FIELD_TYPES = {"text", "long", "number", "date", "choice"}
+LAYOUTS = {
+    "general": ("ACKNOWLEDGEMENT", "Registrar", "Office of the Registrar"),
+    "form": ("FORM ACKNOWLEDGEMENT", "Dean", "Office of the Dean"),
+    "registration": ("REGISTRATION ACKNOWLEDGEMENT", "Controller of Examinations", "Office of the Controller of Examinations"),
+}
 
 
 def _is_admin(user: User) -> bool:
@@ -87,11 +92,13 @@ def _allowed(user: User, form: ServiceForm, grants: set[str]) -> bool:
     return bool(_identities(user) & grants)
 
 
-async def _layout(db: AsyncSession) -> SlipTemplate:
-    row = (await db.execute(select(SlipTemplate).order_by(SlipTemplate.id))).scalars().first()
+async def _layout(db: AsyncSession, kind: str) -> SlipTemplate:
+    kind = kind if kind in LAYOUTS else "general"
+    row = (await db.execute(select(SlipTemplate).where(SlipTemplate.kind == kind))).scalars().first()
     if row:
         return row
-    row = SlipTemplate()
+    title, signatory, office = LAYOUTS[kind]
+    row = SlipTemplate(kind=kind, document_title=title, signatory=signatory, signatory_title=office)
     db.add(row)
     await db.flush()
     return row
@@ -99,6 +106,7 @@ async def _layout(db: AsyncSession) -> SlipTemplate:
 
 def _layout_public(row: SlipTemplate) -> dict:
     return {
+        "kind": row.kind or "general",
         "institution": row.institution,
         "document_title": row.document_title,
         "subtitle": row.subtitle,
@@ -138,6 +146,7 @@ class ShareIn(BaseModel):
 
 
 class LayoutIn(BaseModel):
+    kind: str = "general"
     institution: str = ""
     document_title: str = ""
     subtitle: str = ""
@@ -151,8 +160,12 @@ class SubmitIn(BaseModel):
 
 
 @router.get("/slips/layout")
-async def read_layout(_: Annotated[User, Depends(get_current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
-    return _layout_public(await _layout(db))
+async def read_layout(
+    _: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    kind: str = "general",
+):
+    return _layout_public(await _layout(db, kind))
 
 
 @router.put("/admin/slips/layout")
@@ -161,7 +174,7 @@ async def save_layout(
     _: Annotated[User, Depends(require_roles("university_admin", "admin", "super_admin", "developer", "operator"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    row = await _layout(db)
+    row = await _layout(db, body.kind)
     row.institution = body.institution.strip()[:160] or row.institution
     row.document_title = body.document_title.strip()[:80] or row.document_title
     row.subtitle = body.subtitle.strip()[:160]
@@ -273,6 +286,24 @@ async def share_form(
         seen.add(key)
         db.add(FormGrant(form_id=form.id, identity=token))
     form.audience = "listed"
+    if seen:
+        matched = (
+            await db.execute(
+                select(User)
+                .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+                .where(or_(func.lower(User.username).in_(list(seen)), func.lower(StudentProfile.student_id).in_(list(seen))))
+            )
+        ).scalars().all()
+        for person in matched:
+            db.add(
+                AppNotification(
+                    user_id=person.id,
+                    kind="form",
+                    title=form.title,
+                    body="A form has been shared with you. Open Forms to fill it.",
+                    link="/student/forms",
+                )
+            )
     await db.commit()
     return {"ok": True, "count": len(seen)}
 
@@ -415,11 +446,11 @@ async def submit_form(
     ack = await issue_acknowledgement(
         db,
         user=user,
-        kind="service",
+        kind="form",
         title=form.title,
         summary="\n".join(
             [
-                f"Service: {form.title}",
+                f"Form: {form.title}",
                 f"Identity: {identity}",
                 f"Status: submitted",
                 *lines,
@@ -428,7 +459,32 @@ async def submit_form(
         email=user.email,
         status="submitted",
         ref_key=f"form:{response.id}",
+        notify_kind="form",
     )
     response.ack_number = ack["number"]
     await db.commit()
     return {"ok": True, "acknowledgement": ack}
+
+
+@router.get("/forms/sheet/{number}")
+async def response_sheet(number: str, user: Annotated[User, Depends(get_current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    ack = (await db.execute(select(Acknowledgement).where(Acknowledgement.number == number))).scalar_one_or_none()
+    response = (await db.execute(select(FormResponse).where(FormResponse.ack_number == number))).scalar_one_or_none()
+    if not ack or not response:
+        raise HTTPException(status_code=404, detail="Filled response not found")
+    form = (await db.execute(select(ServiceForm).where(ServiceForm.id == response.form_id))).scalar_one_or_none()
+    allowed = user.role in Admins or ack.actor_user_id == user.id or (form and form.created_by == user.id)
+    if not allowed:
+        raise HTTPException(status_code=404, detail="Filled response not found")
+    answers = json.loads(response.answers_json or "{}")
+    fields = json.loads(form.fields_json or "[]") if form else []
+    person = (await db.execute(select(User).where(User.id == response.user_id).options(selectinload(User.student)))).scalar_one_or_none()
+    return {
+        "number": number,
+        "title": form.title if form else ack.title,
+        "instructions": form.instructions if form else "",
+        "identity": person.student.student_id if person and person.student else (person.username if person else ""),
+        "name": person.full_name if person else "",
+        "status": ack.status,
+        "fields": [{"label": field["label"], "value": answers.get(field["key"], "")} for field in fields],
+    }

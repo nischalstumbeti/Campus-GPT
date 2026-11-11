@@ -29,6 +29,7 @@ async def issue_acknowledgement(
     email: str | None = None,
     status: str = "",
     ref_key: str = "",
+    notify_kind: str = "acknowledgement",
 ) -> dict:
     recipient = (email or (user.email if user else "") or "").strip()
     row = None
@@ -61,7 +62,7 @@ async def issue_acknowledgement(
         db.add(
             AppNotification(
                 user_id=user.id,
-                kind="acknowledgement",
+                kind=notify_kind[:40],
                 title=title[:200],
                 body=f"{row.number}. {summary[:400]}",
                 link=f"/ack/{row.number}",

@@ -194,6 +194,7 @@ async def apply_exam(
         email=user.email,
         status="submitted",
         ref_key=f"exam:{application.id}",
+        notify_kind="registration",
     )
     await write_audit(
         db,
@@ -557,6 +558,7 @@ async def submit_registration(
         email=user.email,
         status="submitted",
         ref_key=f"registration:{request_row.id}",
+        notify_kind="registration",
     )
     await write_audit(
         db,
@@ -769,6 +771,7 @@ async def decide_approval(
             email=student.user.email,
             status=row.status,
             ref_key=f"{source}:{row.id}",
+            notify_kind="registration",
         )
     actor_name = user.username
     actor_role = user.role

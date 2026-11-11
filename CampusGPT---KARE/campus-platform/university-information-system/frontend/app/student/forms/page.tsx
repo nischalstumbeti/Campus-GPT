@@ -54,7 +54,7 @@ export default function StudentFormsPage() {
   return (
     <AppShell>
       <section className="uis-panel">
-        <h1 className="uis-panel-title">Services</h1>
+        <h1 className="uis-panel-title">Forms</h1>
         <div className="p-4 space-y-3">
           {err ? <p className="text-sm text-red-600">{err}</p> : null}
           {slip ? <p className="text-sm text-emerald-700">Submitted. Acknowledgement <Link className="underline" href={`/ack/${slip}`}>{slip}</Link></p> : null}

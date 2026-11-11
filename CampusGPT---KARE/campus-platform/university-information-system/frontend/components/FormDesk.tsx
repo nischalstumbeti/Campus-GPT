@@ -8,7 +8,7 @@ import { confirmPhrase } from "@/lib/confirm";
 type Field = { label: string; type: string; required: boolean; options: string };
 type Service = { id: number; title: string; instructions: string; audience: string; response_limit: number; is_open: boolean };
 type Answer = { id: number; name: string; identity: string; answers: Record<string, string>; ack_number: string };
-type Layout = { institution: string; document_title: string; subtitle: string; footer: string; signatory: string; signatory_title: string };
+type Layout = { kind: string; institution: string; document_title: string; subtitle: string; footer: string; signatory: string; signatory_title: string };
 
 const EMPTY_FIELD: Field = { label: "", type: "text", required: true, options: "" };
 
@@ -23,6 +23,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [identities, setIdentities] = useState("");
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [layout, setLayout] = useState<Layout | null>(null);
+  const [layoutKind, setLayoutKind] = useState("form");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
@@ -35,9 +36,9 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   useEffect(() => {
     load();
     if (manageLayout) {
-      apiFetch<Layout>("/api/v1/slips/layout").then(setLayout).catch(() => setLayout(null));
+      apiFetch<Layout>(`/api/v1/slips/layout?kind=${layoutKind}`).then(setLayout).catch(() => setLayout(null));
     }
-  }, [manageLayout]);
+  }, [manageLayout, layoutKind]);
 
   const create = async (event: FormEvent) => {
     event.preventDefault();
@@ -103,7 +104,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const saveLayout = async (event: FormEvent) => {
     event.preventDefault();
     if (!layout) return;
-    const saved = await apiFetch<Layout>("/api/v1/admin/slips/layout", { method: "PUT", body: JSON.stringify(layout) });
+    const saved = await apiFetch<Layout>("/api/v1/admin/slips/layout", { method: "PUT", body: JSON.stringify({ ...layout, kind: layoutKind }) });
     setLayout(saved);
     setMsg("Acknowledgement layout saved. The next print uses this letterhead.");
   };
@@ -113,7 +114,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
       {err ? <p className="text-sm text-red-600">{err}</p> : null}
       {msg ? <p className="text-sm text-emerald-700">{msg}</p> : null}
       <section className="uis-panel">
-        <h1 className="uis-panel-title">New service</h1>
+        <h1 className="uis-panel-title">New form</h1>
         <form onSubmit={create} className="p-4 space-y-3">
           <label className="block text-xs text-slate-500">Service name
             <input required className="mt-1 w-full border rounded px-2 py-1 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -153,11 +154,11 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
             ))}
             <button type="button" className="text-sm underline" onClick={() => setFields([...fields, { ...EMPTY_FIELD }])}>Add question</button>
           </div>
-          <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Publish service</button>
+          <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Publish form</button>
         </form>
       </section>
       <section className="uis-panel">
-        <h2 className="uis-panel-title">Published services</h2>
+        <h2 className="uis-panel-title">Published forms</h2>
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-slate-500"><tr><th className="px-3 py-2">Service</th><th>Who</th><th>Limit</th><th></th></tr></thead>
           <tbody>
@@ -200,8 +201,15 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
       </section>
       {manageLayout && layout ? (
         <section className="uis-panel">
-          <h2 className="uis-panel-title">Acknowledgement layout</h2>
+          <h2 className="uis-panel-title">Acknowledgement layouts</h2>
           <form onSubmit={saveLayout} className="p-4 grid md:grid-cols-2 gap-2">
+            <label className="text-xs text-slate-500 md:col-span-2">Which slip
+              <select className="mt-1 block border rounded px-2 py-1 text-sm" value={layoutKind} onChange={(e) => setLayoutKind(e.target.value)}>
+                <option value="form">Form acknowledgement</option>
+                <option value="registration">Registration acknowledgement</option>
+                <option value="general">Other acknowledgement</option>
+              </select>
+            </label>
             <label className="text-xs text-slate-500">Institution<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.institution} onChange={(e) => setLayout({ ...layout, institution: e.target.value })} /></label>
             <label className="text-xs text-slate-500">Document title<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.document_title} onChange={(e) => setLayout({ ...layout, document_title: e.target.value })} /></label>
             <label className="text-xs text-slate-500">Subtitle<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.subtitle} onChange={(e) => setLayout({ ...layout, subtitle: e.target.value })} /></label>

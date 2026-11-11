@@ -12,6 +12,15 @@ from app.security.auth import get_current_user
 router = APIRouter(prefix="/api/v1/acknowledgements", tags=["acknowledgements"])
 
 _ADMIN = {"university_admin", "admin", "super_admin", "developer", "operator", "coe", "director"}
+_REGISTRATION = {"registration", "withdrawal", "revaluation", "arrear", "backlog", "makeup"}
+
+
+def _layout_kind(kind: str) -> str:
+    if kind == "form":
+        return "form"
+    if kind in _REGISTRATION:
+        return "registration"
+    return "general"
 
 
 def _public(row: Acknowledgement) -> dict:
@@ -23,6 +32,7 @@ def _public(row: Acknowledgement) -> dict:
         "email": row.recipient_email,
         "email_sent": row.email_sent,
         "status": row.status or "",
+        "layout_kind": _layout_kind(row.kind or ""),
         "created_at": row.created_at.isoformat() if row.created_at else "",
     }
 

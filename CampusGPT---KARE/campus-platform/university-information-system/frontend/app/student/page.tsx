@@ -40,6 +40,7 @@ function Row({ label, value }: { label: string; value: string | number }) {
 export default function StudentDashboard() {
   const [data, setData] = useState<Dash | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [forms, setForms] = useState<{ id: number; title: string; remaining: number | null }[]>([]);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -49,6 +50,9 @@ export default function StudentDashboard() {
     apiFetch<{ items: Notice[] }>("/api/v1/student/announcements")
       .then((d) => setNotices(d.items || []))
       .catch(() => setNotices([]));
+    apiFetch<{ items: { id: number; title: string; remaining: number | null }[] }>("/api/v1/forms/open")
+      .then((d) => setForms(d.items || []))
+      .catch(() => setForms([]));
   }, []);
 
   return (
@@ -95,6 +99,22 @@ export default function StudentDashboard() {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="uis-panel">
+            <h2 className="uis-panel-title">Forms</h2>
+            {forms.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-slate-500">No form is shared with you.</p>
+            ) : (
+              <ul>
+                {forms.map((form) => (
+                  <li key={form.id} className="px-4 py-2 text-sm border-b border-slate-200 last:border-0">
+                    <a className="font-medium text-[#0B2A4A] underline" href="/student/forms">{form.title}</a>
+                    <span className="text-slate-600"> — {form.remaining === null ? "open" : form.remaining === 0 ? "submitted" : `${form.remaining} left`}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="uis-panel">

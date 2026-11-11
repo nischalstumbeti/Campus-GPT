@@ -13,8 +13,11 @@ type Slip = {
   email: string;
   email_sent: boolean;
   status?: string;
+  layout_kind?: string;
   created_at: string;
 };
+
+type Sheet = { title: string; name: string; identity: string; status: string; fields: { label: string; value: string }[] };
 
 type Layout = {
   institution: string;
@@ -39,12 +42,22 @@ export default function AcknowledgementPage() {
   const number = String(params.number || "");
   const [slip, setSlip] = useState<Slip | null>(null);
   const [layout, setLayout] = useState<Layout>(FALLBACK);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [paper, setPaper] = useState<"ack" | "sheet">("ack");
   const [err, setErr] = useState("");
 
   useEffect(() => {
     if (!number) return;
-    apiFetch<Slip>(`/api/v1/acknowledgements/${number}`).then(setSlip).catch((e) => setErr(e.message));
-    apiFetch<Layout>("/api/v1/slips/layout").then(setLayout).catch(() => setLayout(FALLBACK));
+    apiFetch<Slip>(`/api/v1/acknowledgements/${number}`)
+      .then((row) => {
+        setSlip(row);
+        const kind = row.layout_kind || "general";
+        apiFetch<Layout>(`/api/v1/slips/layout?kind=${kind}`).then(setLayout).catch(() => setLayout(FALLBACK));
+        if (kind === "form") {
+          apiFetch<Sheet>(`/api/v1/forms/sheet/${number}`).then(setSheet).catch(() => setSheet(null));
+        }
+      })
+      .catch((e) => setErr(e.message));
   }, [number]);
 
   const lines = (slip?.summary || "").split("\n").map((line) => line.trim()).filter(Boolean);
@@ -54,8 +67,8 @@ export default function AcknowledgementPage() {
       <style>{`
         @media print {
           body * { visibility: hidden; }
-          .ack-sheet, .ack-sheet * { visibility: visible; }
-          .ack-sheet { position: absolute; left: 0; top: 0; width: 190mm; margin: 0; box-shadow: none; }
+          .paper-on, .paper-on * { visibility: visible; }
+          .paper-on { position: absolute; left: 0; top: 0; width: 190mm; margin: 0; box-shadow: none; }
           .no-print { display: none !important; }
         }
       `}</style>
@@ -64,10 +77,12 @@ export default function AcknowledgementPage() {
       {slip ? (
         <div>
           <div className="no-print mb-3 flex gap-2">
+            <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={() => setPaper("ack")}>Acknowledgement</button>
+            {sheet ? <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={() => setPaper("sheet")}>Filled response</button> : null}
             <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={() => window.print()}>Print</button>
             <Link href="/ack" className="px-3 py-1.5 rounded border text-sm">All slips</Link>
           </div>
-          <article className="ack-sheet mx-auto bg-white text-black" style={{ width: "190mm", minHeight: "250mm", padding: "12mm", border: "1px solid #111" }}>
+          <article className={`${paper === "ack" ? "paper-on" : "hidden"} ack-sheet mx-auto bg-white text-black`} style={{ width: "190mm", minHeight: "250mm", padding: "12mm", border: "1px solid #111" }}>
             <div style={{ border: "3px double #111", minHeight: "226mm", padding: "10mm" }}>
               <p className="text-center text-[11px] tracking-[0.18em] uppercase">{layout.subtitle}</p>
               <h1 className="mt-1 text-center text-xl font-bold">{layout.institution}</h1>
@@ -105,6 +120,29 @@ export default function AcknowledgementPage() {
               <p className="mt-10 text-center text-[11px]">{layout.footer}</p>
             </div>
           </article>
+          {sheet ? (
+            <article className={`${paper === "sheet" ? "paper-on" : "hidden"} mx-auto mt-4 bg-white text-black`} style={{ width: "190mm", minHeight: "250mm", padding: "12mm", border: "1px solid #111" }}>
+              <div style={{ border: "3px double #111", minHeight: "226mm", padding: "10mm" }}>
+                <p className="text-center text-sm font-semibold tracking-[0.2em]">FILLED RESPONSE</p>
+                <h1 className="mt-2 text-center text-xl font-bold">{sheet.title}</h1>
+                <div className="mt-4 flex justify-between text-sm">
+                  <p>{sheet.name} · {sheet.identity}</p>
+                  <p>Ack. no. <span className="font-mono font-semibold">{slip.number}</span></p>
+                </div>
+                <table className="mt-4 w-full text-sm">
+                  <tbody>
+                    {sheet.fields.map((field) => (
+                      <tr key={field.label} className="border-b border-slate-300">
+                        <th className="w-2/5 py-2 pr-3 text-left font-medium align-top">{field.label}</th>
+                        <td className="py-2 align-top">{field.value || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-6 text-sm">Status: {sheet.status || "submitted"}</p>
+              </div>
+            </article>
+          ) : null}
         </div>
       ) : null}
     </AppShell>
