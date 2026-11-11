@@ -28,6 +28,8 @@ from app.models import (
     Grade,
     HostelAllocation,
     Mark,
+    PeopleGroup,
+    PeopleGroupMember,
     Program,
     StudentFee,
     StudentProfile,
@@ -898,6 +900,8 @@ class UserCreate(BaseModel):
     residence: Optional[str] = ""
     transport: Optional[str] = ""
     residence_detail: Optional[str] = ""
+    group: Optional[str] = ""
+    group_id: Optional[int] = None
 
 
 class UserUpdate(BaseModel):
@@ -989,6 +993,7 @@ BULK_TEMPLATE_HEADERS = [
     "batch",
     "faculty_id",
     "designation",
+    "group",
 ]
 
 
@@ -1119,6 +1124,86 @@ async def _create_user_record(
     return new_user
 
 
+def _label_names(raw: str) -> list[str]:
+    names: list[str] = []
+    for part in re.split(r"[;|]", raw or ""):
+        name = part.strip()
+        if name and name.casefold() not in {item.casefold() for item in names}:
+            names.append(name[:120])
+    return names[:8]
+
+
+async def _group_for_label(db: AsyncSession, label: str) -> PeopleGroup:
+    """Find a group by its name or path, or create it. Membership is a label, not a privilege."""
+    groups = list((await db.execute(select(PeopleGroup))).scalars().all())
+
+    def path(group: PeopleGroup) -> str:
+        parent = next((item for item in groups if item.id == group.parent_id), None)
+        return f"{path(parent)} / {group.name}" if parent else group.name
+
+    wanted = label.strip().casefold()
+    for group in groups:
+        if path(group).casefold() == wanted:
+            return group
+    same_name = [group for group in groups if group.name.casefold() == wanted]
+    if len(same_name) == 1:
+        return same_name[0]
+
+    parent_id = None
+    current: Optional[PeopleGroup] = None
+    pieces = [piece.strip()[:80] for piece in label.split("/") if piece.strip()] or [label.strip()[:80]]
+    for piece in pieces:
+        match = next(
+            (group for group in groups if group.parent_id == parent_id and group.name.casefold() == piece.casefold()),
+            None,
+        )
+        if not match:
+            match = PeopleGroup(name=piece, parent_id=parent_id, purpose="Label")
+            db.add(match)
+            await db.flush()
+            groups.append(match)
+        parent_id = match.id
+        current = match
+    if current is None:
+        raise HTTPException(status_code=400, detail="Group label is empty")
+    return current
+
+
+async def _label_user(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    group_id: Optional[int] = None,
+    group_text: str = "",
+) -> str:
+    chosen: list[PeopleGroup] = []
+    if group_id:
+        group = (await db.execute(select(PeopleGroup).where(PeopleGroup.id == group_id))).scalar_one_or_none()
+        if not group:
+            raise HTTPException(status_code=400, detail="That group label was not found")
+        chosen.append(group)
+    for name in _label_names(group_text):
+        chosen.append(await _group_for_label(db, name))
+    attached: list[str] = []
+    seen: set[int] = set()
+    for group in chosen:
+        if group.id in seen:
+            continue
+        seen.add(group.id)
+        already = (
+            await db.execute(
+                select(PeopleGroupMember).where(
+                    PeopleGroupMember.group_id == group.id,
+                    PeopleGroupMember.user_id == user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not already:
+            db.add(PeopleGroupMember(group_id=group.id, user_id=user_id))
+        attached.append(group.name)
+    return "; ".join(attached)
+
+
 @router.post("/users")
 async def create_user(
     body: UserCreate,
@@ -1147,6 +1232,7 @@ async def create_user(
         transport=body.transport,
         residence_detail=body.residence_detail,
     )
+    label = await _label_user(db, new_user.id, group_id=body.group_id, group_text=body.group or "")
     await db.commit()
     background_tasks.add_task(
         mail.send_uis_welcome_email,
@@ -1166,7 +1252,7 @@ async def create_user(
         purpose=f"{body.role}:{body.username}",
         result="ALLOWED",
     )
-    return {"ok": True, "id": new_user.id, "username": new_user.username, "role": new_user.role}
+    return {"ok": True, "id": new_user.id, "username": new_user.username, "role": new_user.role, "group": label}
 
 
 @router.post("/users/{user_id}/photo")
@@ -1229,6 +1315,7 @@ async def users_import_template(user: Annotated[User, Depends(EditRoles)]):
             "2026",
             "",
             "",
+            "CSE 2026 A",
         ]
     )
     writer.writerow(
@@ -1246,6 +1333,7 @@ async def users_import_template(user: Annotated[User, Depends(EditRoles)]):
             "",
             "FACCSE001",
             "Associate Professor",
+            "CSE Faculty",
         ]
     )
     writer.writerow(
@@ -1255,6 +1343,7 @@ async def users_import_template(user: Annotated[User, Depends(EditRoles)]):
             "warden@klu.ac.in",
             "Hostel Warden",
             "campus123",
+            "",
             "",
             "",
             "",
@@ -1353,8 +1442,15 @@ async def import_users(
                 designation=_row_get(row, "designation", "Designation", default="Assistant Professor")
                 or "Assistant Professor",
             )
+            label = await _label_user(
+                db,
+                new_user.id,
+                group_text=_row_get(row, "group", "group_label", "label", "Group"),
+            )
             await db.commit()
-            created.append({"row": idx, "username": new_user.username, "role": new_user.role, "id": new_user.id})
+            created.append(
+                {"row": idx, "username": new_user.username, "role": new_user.role, "id": new_user.id, "group": label}
+            )
             background_tasks.add_task(
                 mail.send_uis_welcome_email,
                 new_user.email,

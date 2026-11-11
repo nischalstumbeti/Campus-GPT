@@ -36,9 +36,11 @@ type ImportResult = {
   created_count: number;
   error_count: number;
   message: string;
-  created: { row: number; username: string; role: string }[];
+  created: { row: number; username: string; role: string; group?: string }[];
   errors: { row: number; error: string }[];
 };
+
+type GroupRow = { id: number; name: string; parent_id: number | null };
 
 export default function AdminUsersPage() {
   const [items, setItems] = useState<UserRow[]>([]);
@@ -55,6 +57,7 @@ export default function AdminUsersPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<File | null>(null);
+  const [groups, setGroups] = useState<GroupRow[]>([]);
   const [form, setForm] = useState({
     username: "",
     email: "",
@@ -72,7 +75,14 @@ export default function AdminUsersPage() {
     residence: "hostel",
     transport: "",
     residence_detail: "",
+    group_id: "",
+    group: "",
   });
+
+  const groupPath = (group: GroupRow): string => {
+    const parent = groups.find((item) => item.id === group.parent_id);
+    return parent ? `${groupPath(parent)} / ${group.name}` : group.name;
+  };
 
   const load = async () => {
     const params = new URLSearchParams({ limit: "500" });
@@ -84,6 +94,9 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     load().catch((e) => setMsg(e.message));
+    apiFetch<{ items: GroupRow[] }>("/api/v1/admin/groups")
+      .then((data) => setGroups(data.items || []))
+      .catch(() => setGroups([]));
   }, []);
 
   const createUser = async (e: FormEvent) => {
@@ -106,6 +119,8 @@ export default function AdminUsersPage() {
         residence: form.residence,
         transport: form.residence === "day_scholar" ? form.transport : "",
         residence_detail: form.residence_detail,
+        group_id: form.group_id ? Number(form.group_id) : null,
+        group: form.group.trim(),
       };
       if (isStudent) {
         body.student_id = userId;
@@ -117,12 +132,15 @@ export default function AdminUsersPage() {
       if (form.role === "faculty" || form.role === "hod" || form.role === "school_dean") {
         body.faculty_id = userId;
       }
-      const created = await apiFetch<{ id: number }>("/api/v1/admin/users", { method: "POST", body: JSON.stringify(body) });
+      const created = await apiFetch<{ id: number; group?: string }>("/api/v1/admin/users", { method: "POST", body: JSON.stringify(body) });
       if (photo) await apiUpload(`/api/v1/admin/users/${created.id}/photo`, photo);
-      setMsg(`Created ${ROLES.find((r) => r.value === form.role)?.label || form.role}: ${userId}`);
+      setMsg(
+        `Created ${ROLES.find((r) => r.value === form.role)?.label || form.role}: ${userId}` +
+          (created.group ? `. Label: ${created.group}` : "")
+      );
       setShowCreate(false);
       setPhoto(null);
-      setForm((f) => ({ ...f, username: "", email: "", full_name: "", abc_id: "", residence_detail: "" }));
+      setForm((f) => ({ ...f, username: "", email: "", full_name: "", abc_id: "", residence_detail: "", group_id: "", group: "" }));
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Create failed");
@@ -316,8 +334,8 @@ export default function AdminUsersPage() {
           <ol className="text-sm text-slate-600 list-decimal pl-5 space-y-1">
             <li>Download the template (opens in Excel).</li>
             <li>
-              Fill one row per person. Role can be: student, faculty, hod, hostel_admin (warden), exam_admin, admin,
-              etc.
+              Fill one row per person. Role decides privileges. The group column is only a label, such as CSE 2026 A.
+              Separate more than one label with a semicolon.
             </li>
             <li>Upload the saved .xlsx or .csv — accounts are created in UIS and can sign in to Campus-GPT with the same email.</li>
           </ol>
@@ -348,7 +366,7 @@ export default function AdminUsersPage() {
               </p>
               {!!importResult.created.length && (
                 <p className="text-xs text-slate-600">
-                  Added: {importResult.created.map((c) => `${c.username} (${c.role})`).join(", ")}
+                  Added: {importResult.created.map((c) => `${c.username} (${c.role}${c.group ? `, ${c.group}` : ""})`).join(", ")}
                 </p>
               )}
               {!!importResult.errors.length && (
@@ -400,6 +418,31 @@ export default function AdminUsersPage() {
               ))}
             </select>
             <span className="mt-1 block text-xs text-slate-500">{ROLES.find((item) => item.value === form.role)?.privilege}</span>
+          </label>
+          <label className="block">
+            <span className="text-xs text-slate-500">Group label</span>
+            <select
+              className="w-full border rounded-lg px-2 py-1.5 mt-0.5"
+              value={form.group_id}
+              onChange={(e) => setForm({ ...form, group_id: e.target.value })}
+            >
+              <option value="">No group</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {groupPath(group)}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">A group is a label. It does not change this role’s privileges.</span>
+          </label>
+          <label className="block">
+            <span className="text-xs text-slate-500">New label</span>
+            <input
+              className="w-full border rounded-lg px-2 py-1.5 mt-0.5"
+              value={form.group}
+              placeholder="CSE 2026 A"
+              onChange={(e) => setForm({ ...form, group: e.target.value })}
+            />
           </label>
           <label className="block">
             <span className="text-xs text-slate-500">{form.role === "student" ? "Register number" : "User ID"}</span>
