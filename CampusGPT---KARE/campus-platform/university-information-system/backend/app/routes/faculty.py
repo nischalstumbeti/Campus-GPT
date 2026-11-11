@@ -14,7 +14,9 @@ from app.models import (
     AttendanceRecord,
     AttendanceSession,
     Complaint,
+    Course,
     CourseOffering,
+    Department,
     Enrollment,
     FacultyProfile,
     Grade,
@@ -99,9 +101,23 @@ def _faculty_or_403(user: User) -> FacultyProfile:
     return user.faculty
 
 
-async def _assert_offering_access(user: User, off: CourseOffering):
+async def _assert_offering_access(user: User, off: CourseOffering, db: AsyncSession):
     if user.role == "faculty" and user.faculty and off.faculty_id != user.faculty.id:
         raise HTTPException(status_code=403, detail="Not assigned to this class")
+    code = (user.department_code or "").strip()
+    if user.role in {"hod", "school_dean"} and code:
+        known = (
+            await db.execute(select(Department).where(func.lower(Department.code) == code.casefold()))
+        ).scalar_one_or_none()
+        course = (await db.execute(select(Course).where(Course.id == off.course_id))).scalar_one_or_none()
+        if known and (not course or course.department_id != known.id):
+            raise HTTPException(status_code=403, detail="This class is outside your department")
+
+
+async def _reject_if_marks_locked(db: AsyncSession, offering_id: int) -> None:
+    off = await db.get(CourseOffering, offering_id)
+    if off and off.marks_locked:
+        raise HTTPException(status_code=403, detail="These marks are published. The examination controller has to reopen them before they can change.")
 
 
 @router.get("/dashboard")
@@ -277,7 +293,7 @@ async def class_students(
     ).scalar_one_or_none()
     if not off:
         raise HTTPException(status_code=404, detail="Offering not found")
-    await _assert_offering_access(user, off)
+    await _assert_offering_access(user, off, db)
 
     result = await db.execute(
         select(Enrollment)
@@ -877,7 +893,7 @@ async def class_attendance(
     ).scalar_one_or_none()
     if not off:
         raise HTTPException(status_code=404, detail="Offering not found")
-    await _assert_offering_access(user, off)
+    await _assert_offering_access(user, off, db)
 
     result = await db.execute(
         select(Enrollment)
@@ -955,7 +971,7 @@ async def update_attendance(
     ).scalar_one_or_none()
     if not off:
         raise HTTPException(status_code=404, detail="Offering not found")
-    await _assert_offering_access(user, off)
+    await _assert_offering_access(user, off, db)
 
     touched_students: set[int] = set()
     for item in body.updates:
@@ -1010,7 +1026,7 @@ async def mark_session(
     ).scalar_one_or_none()
     if not off:
         raise HTTPException(status_code=404, detail="Offering not found")
-    await _assert_offering_access(user, off)
+    await _assert_offering_access(user, off, db)
 
     result = await db.execute(select(Enrollment).where(Enrollment.offering_id == offering_id))
     enrollments = result.scalars().all()
@@ -1070,7 +1086,7 @@ async def class_student_attendance(
     ).scalar_one_or_none()
     if not off:
         raise HTTPException(status_code=404, detail="Offering not found")
-    await _assert_offering_access(user, off)
+    await _assert_offering_access(user, off, db)
     profile = (
         await db.execute(select(StudentProfile).where(StudentProfile.student_id == student_id))
     ).scalar_one_or_none()
@@ -1101,7 +1117,7 @@ async def save_class_student_attendance(
     ).scalar_one_or_none()
     if not off:
         raise HTTPException(status_code=404, detail="Offering not found")
-    await _assert_offering_access(user, off)
+    await _assert_offering_access(user, off, db)
     profile = (
         await db.execute(select(StudentProfile).where(StudentProfile.student_id == student_id))
     ).scalar_one_or_none()
@@ -1263,6 +1279,7 @@ async def save_class_mark_sheet(
     user: Annotated[User, Depends(require_roles("faculty", "hod", "school_dean"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    await _reject_if_marks_locked(db, offering_id)
     roster = await class_students(offering_id, user, db)
     allowed = {row["student_id"]: row["enrollment_id"] for row in roster["students"]}
     name = body.assessment.strip()
@@ -1314,7 +1331,7 @@ async def _class_enrollment(db: AsyncSession, user: User, offering_id: int, stud
     ).scalar_one_or_none()
     if not off:
         raise HTTPException(status_code=404, detail="Offering not found")
-    await _assert_offering_access(user, off)
+    await _assert_offering_access(user, off, db)
     profile = (
         await db.execute(select(StudentProfile).where(StudentProfile.student_id == student_id))
     ).scalar_one_or_none()
@@ -1368,6 +1385,7 @@ async def save_class_student_mark(
 ):
     if body.score > body.max_score:
         raise HTTPException(status_code=400, detail="Score cannot be higher than the maximum.")
+    await _reject_if_marks_locked(db, offering_id)
     _off, enrolled = await _class_enrollment(db, user, offering_id, student_id)
     name = body.assessment.strip()
     row = (
@@ -1393,3 +1411,22 @@ async def save_class_student_mark(
         result="ALLOWED",
     )
     return {"ok": True, "assessment": name, "score": body.score, "max_score": body.max_score}
+
+
+class MarksLockIn(BaseModel):
+    locked: bool
+
+
+@router.post("/classes/{offering_id}/marks-lock")
+async def set_marks_lock(
+    offering_id: int,
+    body: MarksLockIn,
+    user: Annotated[User, Depends(require_roles("coe", "exam_admin", "admin", "university_admin", "super_admin", "developer", "operator"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    off = await db.get(CourseOffering, offering_id)
+    if not off:
+        raise HTTPException(status_code=404, detail="Class not found")
+    off.marks_locked = body.locked
+    await db.commit()
+    return {"ok": True, "offering_id": offering_id, "locked": off.marks_locked, "by": user.username}

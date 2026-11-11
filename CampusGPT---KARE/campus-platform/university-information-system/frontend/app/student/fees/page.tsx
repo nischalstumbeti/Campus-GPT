@@ -5,7 +5,7 @@ import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 
-type Payment = { id: number; amount: number; method: string; receipt_no?: string; created_at?: string };
+type Payment = { id: number; amount: number; method: string; receipt_no?: string; created_at?: string; settled?: boolean };
 type Fee = {
   id: number;
   title: string;
@@ -125,7 +125,7 @@ export default function StudentFeesPage() {
                       setPayAmount((p) => ({ ...p, [f.id]: String(f.remaining) }));
                     }}
                   >
-                    Pay fee
+                    Send to cashier
                   </button>
                 ) : (
                   <form onSubmit={(e) => pay(e, f)} className="flex flex-wrap gap-2 items-end">
@@ -155,7 +155,7 @@ export default function StudentFeesPage() {
                       disabled={payBusy}
                       className="px-4 py-2 rounded-md bg-brand text-white text-sm disabled:opacity-50"
                     >
-                      Confirm pay
+                      Submit claim
                     </button>
                     <button type="button" className="text-xs underline" onClick={() => setEditing((p) => ({ ...p, [f.id]: false }))}>
                       Cancel
@@ -168,7 +168,7 @@ export default function StudentFeesPage() {
               <ul className="mt-3 text-xs text-slate-500 space-y-1">
                 {[...f.payments].reverse().map((p) => (
                   <li key={p.id}>
-                    ₹{p.amount} · {p.receipt_no || p.method} · {p.created_at?.slice(0, 10)}
+                    ₹{p.amount} · {p.receipt_no || p.method} · {p.settled === false ? "waiting for the cashier" : "posted"} · {p.created_at?.slice(0, 10)}
                   </li>
                 ))}
               </ul>
@@ -186,7 +186,7 @@ export default function StudentFeesPage() {
             <dl className="mt-3 text-sm space-y-1">
               <div className="flex justify-between"><dt>Student</dt><dd>{receipt.student_name}</dd></div>
               <div className="flex justify-between"><dt>Fee</dt><dd>{receipt.fee_title}</dd></div>
-              <div className="flex justify-between"><dt>Paid now</dt><dd className="text-emerald-700 font-semibold">₹{receipt.amount_paid}</dd></div>
+              <div className="flex justify-between"><dt>Claimed</dt><dd className="text-amber-700 font-semibold">₹{receipt.amount_paid}</dd></div>
               <div className="flex justify-between"><dt>Total paid</dt><dd>₹{receipt.paid_amount}</dd></div>
               <div className="flex justify-between"><dt>Remaining</dt><dd className="text-amber-700 font-semibold">₹{receipt.remaining}</dd></div>
             </dl>

@@ -1523,22 +1523,29 @@ async def deactivate_user(
     return {"ok": True, "deleted": label, "acknowledgement": ack}
 
 
+class ImpersonateIn(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
 @router.post("/users/{user_id}/impersonate")
 async def impersonate_user(
     user_id: int,
-    body: PhraseIn,
+    body: ImpersonateIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    require_phrase(body.confirm, target.username)
+    from app.security.auth import verify_password_async
+
+    if not await verify_password_async(body.password, user.hashed_password):
+        raise HTTPException(status_code=403, detail="That password does not match the administrator who is signed in")
     if user.id == target.id:
         raise HTTPException(status_code=400, detail="You are already signed in as this account")
     if not target.is_active:
         raise HTTPException(status_code=400, detail="Enable the account before signing in as this user")
-    token = create_access_token({"sub": target.username, "role": target.role, "uid": target.id})
+    token = create_access_token({"sub": target.username, "role": target.role, "uid": target.id}, expires_minutes=30)
     await write_audit(
         db,
         actor="UIS Admin",

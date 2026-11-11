@@ -288,6 +288,7 @@ async def transactions(_: Annotated[User, Depends(EditRoles)], db: Annotated[Asy
                 "amount": row.amount,
                 "method": row.method,
                 "note": row.note,
+                "settled": bool(row.settled),
                 "title": row.fee.title if row.fee else "",
                 "payer": people[row.fee.user_id].full_name if row.fee and row.fee.user_id in people else "",
                 "email": people[row.fee.user_id].email if row.fee and row.fee.user_id in people else "",
@@ -296,6 +297,49 @@ async def transactions(_: Annotated[User, Depends(EditRoles)], db: Annotated[Asy
             for row in rows
         ]
     }
+
+
+@router.post("/api/v1/admin/finance/payments/{payment_id}/post")
+async def post_payment(
+    payment_id: int,
+    user: Annotated[User, Depends(EditRoles)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    row = (
+        await db.execute(select(FeePayment).where(FeePayment.id == payment_id).options(selectinload(FeePayment.fee)))
+    ).scalar_one_or_none()
+    if not row or not row.fee:
+        raise HTTPException(status_code=404, detail="Payment claim not found")
+    if row.settled:
+        raise HTTPException(status_code=400, detail="This receipt is already posted")
+    fee = row.fee
+    paid_before = float(fee.paid_amount or 0)
+    new_paid = round(paid_before + float(row.amount or 0), 2)
+    if new_paid > float(fee.total_amount or 0) + 0.01:
+        raise HTTPException(status_code=400, detail="This claim is larger than the amount still due")
+    fee.paid_amount = new_paid
+    fee.status = "paid" if new_paid + 0.01 >= float(fee.total_amount or 0) else "partial"
+    row.settled = True
+    payer = (await db.execute(select(User).where(User.id == fee.user_id))).scalar_one_or_none()
+    ack = await issue_acknowledgement(
+        db,
+        user=payer,
+        kind="payment",
+        title=f"Fee receipt {row.receipt_no}",
+        summary=(
+            f"Payer: {payer.full_name if payer else ''}\n"
+            f"Fee: {fee.title}\n"
+            f"Amount: {row.amount}\n"
+            f"Method: {row.method}\n"
+            f"Status: posted by finance\n"
+            f"Receipt: {row.receipt_no}"
+        ),
+        email=payer.email if payer else None,
+        status=fee.status,
+        ref_key=f"payment:{row.id}",
+    )
+    await db.commit()
+    return {"ok": True, "status": fee.status, "paid_amount": fee.paid_amount, "acknowledgement": ack, "posted_by": user.username}
 
 
 class PayrollIn(BaseModel):

@@ -58,6 +58,7 @@ def _serialize_fee(f: StudentFee) -> dict:
                 "method": p.method,
                 "note": p.note,
                 "receipt_no": p.receipt_no or "",
+                "settled": bool(p.settled),
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             }
             for p in (f.payments or [])
@@ -176,52 +177,39 @@ async def pay_fee(
             status_code=400,
             detail=f"{provider} is selected for live charges. Switch live charges off to collect on the institute gateway while testing.",
         )
-    # Optimistic concurrency — works on SQLite where FOR UPDATE is a no-op
-    from sqlalchemy import update
-
-    paid_before = float(fee.paid_amount or 0)
-    new_paid = round(paid_before + body.amount, 2)
-    new_status = _fee_status(fee.total_amount, new_paid, fee.deadline or "")
-    result = await db.execute(
-        update(StudentFee)
-        .where(StudentFee.id == fee.id, StudentFee.paid_amount == paid_before)
-        .values(paid_amount=new_paid, status=new_status)
-    )
-    if result.rowcount != 1:
-        raise HTTPException(status_code=409, detail="Concurrent payment detected — please retry")
     receipt_no = _receipt_no()
     pay = FeePayment(
         fee_id=fee.id,
         amount=round(body.amount, 2),
         method=body.method,
-        note=body.note.strip() or "UIS student payment",
+        note=body.note.strip() or "Waiting for the cashier",
         receipt_no=receipt_no,
+        settled=False,
     )
     db.add(pay)
     await db.flush()
-    await db.refresh(fee)
     merchant = gateway.merchant_name if gateway else "Institute gateway"
     ack = await issue_acknowledgement(
         db,
         user=user,
         kind="payment",
-        title=f"Fee receipt {receipt_no}",
+        title=f"Fee claim {receipt_no}",
         summary=(
             f"Payer: {user.full_name}\n"
             f"Fee: {fee.title}\n"
-            f"Amount: {round(body.amount, 2)}\n"
+            f"Amount claimed: {round(body.amount, 2)}\n"
             f"Method: {pay.method}\n"
             f"Gateway: {merchant} ({provider})\n"
-            f"Status: {new_status}\n"
-            f"Receipt: {receipt_no}"
+            f"Status: waiting for the cashier\n"
+            f"Claim: {receipt_no}"
         ),
         email=user.email,
-        status=new_status,
+        status="pending",
         ref_key=f"payment:{pay.id}",
     )
-    new_remaining = max(0.0, round((fee.total_amount or 0) - (fee.paid_amount or 0), 2))
     return {
         "ok": True,
+        "pending": True,
         "fee": _serialize_fee(fee),
         "receipt": {
             "receipt_no": receipt_no,
@@ -231,13 +219,13 @@ async def pay_fee(
             "amount_paid": round(body.amount, 2),
             "total_amount": fee.total_amount,
             "paid_amount": fee.paid_amount,
-            "remaining": new_remaining,
+            "remaining": remaining,
             "method": pay.method,
             "paid_at": pay.created_at.isoformat() if pay.created_at else datetime.utcnow().isoformat(),
-            "status": fee.status,
+            "status": "pending",
         },
         "acknowledgement": ack,
-        "message": f"Payment successful. Receipt {receipt_no}. Slip {ack['number']}",
+        "message": f"Sent to the cashier as {receipt_no}. The fee stays due until finance posts it. Slip {ack['number']}",
         "source": "UIS",
     }
 

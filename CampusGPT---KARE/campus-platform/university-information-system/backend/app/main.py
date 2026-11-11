@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -321,6 +322,40 @@ async def _ensure_slip_kind(conn):
         await conn.execute(text("ALTER TABLE slip_templates ADD COLUMN kind VARCHAR(24) DEFAULT 'general'"))
 
 
+async def _ensure_integrity_columns(conn):
+    """Columns added after the first release. Postgres and SQLite both receive them."""
+    from sqlalchemy import text
+
+    name = getattr(getattr(conn, "dialect", None), "name", "") or ""
+    statements = [
+        ("fee_payments", "settled", "BOOLEAN DEFAULT 1"),
+        ("course_offerings", "marks_locked", "BOOLEAN DEFAULT 0"),
+        ("acknowledgements", "status", "VARCHAR(32) DEFAULT ''"),
+        ("acknowledgements", "ref_key", "VARCHAR(64) DEFAULT ''"),
+        ("acknowledgements", "verify_code", "VARCHAR(64) DEFAULT ''"),
+        ("service_forms", "allow_edit", "BOOLEAN DEFAULT 0"),
+        ("service_forms", "issue_ack", "BOOLEAN DEFAULT 1"),
+        ("service_forms", "collect_json", "TEXT DEFAULT '[]'"),
+        ("form_collaborators", "can_edit", "BOOLEAN DEFAULT 0"),
+    ]
+    if name == "postgresql":
+        schema = os.getenv("UIS_DB_SCHEMA", "uis").strip() or "uis"
+        for table, column, typedef in statements:
+            await conn.execute(text(f'ALTER TABLE "{schema}"."{table}" ADD COLUMN IF NOT EXISTS {column} {typedef}'))
+        return
+    if name != "sqlite":
+        return
+
+    def _cols(sync_conn, table):
+        rows = sync_conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        return {row[1] for row in rows}
+
+    for table, column, typedef in statements:
+        existing = await conn.run_sync(lambda sync_conn, table=table: _cols(sync_conn, table))
+        if existing and column not in existing:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {typedef}"))
+
+
 async def _ensure_form_extras(conn):
     """Columns added after the first form tables were created."""
     from sqlalchemy import text
@@ -405,23 +440,27 @@ async def lifespan(app: FastAPI):
                 await _ensure_ack_columns(conn)
                 await _ensure_slip_kind(conn)
                 await _ensure_form_extras(conn)
+                await _ensure_integrity_columns(conn)
             except Exception:
                 pass
     except Exception as exc:
         print(f"UIS schema init warning: {exc}")
-    # Free Render disks start empty. Load the campus123 demo accounts once
-    # per empty database so live login works after every cold start.
+    # Demo accounts load only for a local or explicitly marked demo database.
+    # A production boot with an empty disk stays empty instead of publishing a shared password.
     try:
         from sqlalchemy import func, select
 
         from app.database import SessionLocal
         from app.seed.run_seed import seed
 
+        allow_demo = settings.environment.strip().lower() != "production" or os.getenv("UIS_SEED_DEMO", "").strip().lower() in {"1", "true", "yes"}
         async with SessionLocal() as db:
             user_count = await db.scalar(select(func.count()).select_from(User))
-        if not user_count:
-            print("UIS demo seed: no users, loading campus123 accounts")
+        if not user_count and allow_demo:
+            print("UIS demo seed: empty database, loading demo accounts")
             await seed()
+        elif not user_count:
+            print("UIS demo seed skipped: production database is empty")
     except Exception as exc:
         print(f"UIS demo seed skipped: {exc}")
     try:

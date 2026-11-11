@@ -83,6 +83,7 @@ class CourseOffering(Base):
     semester: Mapped[int] = mapped_column(Integer)
     academic_year: Mapped[str] = mapped_column(String(16))
     section: Mapped[str] = mapped_column(String(8), default="A")
+    marks_locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     course: Mapped["Course"] = relationship()
     faculty: Mapped[Optional["FacultyProfile"]] = relationship()
@@ -503,6 +504,7 @@ class FeePayment(Base):
     method: Mapped[str] = mapped_column(String(32), default="mock_upi")
     note: Mapped[str] = mapped_column(String(255), default="")
     receipt_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    settled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     fee: Mapped["StudentFee"] = relationship(back_populates="payments")

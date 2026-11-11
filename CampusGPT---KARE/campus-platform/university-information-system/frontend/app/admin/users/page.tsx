@@ -245,18 +245,14 @@ export default function AdminUsersPage() {
   };
 
   const signInAs = async (u: UserRow) => {
-    const ok = await confirmPhrase({
-      title: `Sign in as ${u.full_name}`,
-      detail: "You can return to this admin account from the banner.",
-      phrase: u.username,
-    });
-    if (!ok) return;
+    const password = window.prompt(`Enter your own administrator password to sign in as ${u.full_name}.`);
+    if (!password) return;
     setBusy(true);
     setMsg("");
     try {
       const data = await apiFetch<{ access_token: string; role: string }>(`/api/v1/admin/users/${u.id}/impersonate`, {
         method: "POST",
-        body: JSON.stringify({ confirm: u.username }),
+        body: JSON.stringify({ password }),
       });
       const current = localStorage.getItem("uis_token");
       if (current) localStorage.setItem("uis_admin_return", current);

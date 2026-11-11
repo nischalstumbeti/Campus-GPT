@@ -153,7 +153,7 @@ export default function LoginPage() {
             </button>
           </form>
           <div className="mt-6 text-xs text-slate-500 space-y-2 border-t pt-4">
-            <p className="font-medium text-slate-700">Demo login (password: campus123)</p>
+            <p className="font-medium text-slate-700">Demo accounts</p>
             <div className="grid grid-cols-2 gap-2">
               {[
                 ["student.demo", "Student"],

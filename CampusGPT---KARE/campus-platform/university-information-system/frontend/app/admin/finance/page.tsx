@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 
 type Gateway = { provider: string; merchant_name: string; key_id: string; secret_saved: boolean; live_charges: boolean };
-type Tx = { id: number; receipt_no: string; amount: number; method: string; title: string; payer: string; created_at: string };
+type Tx = { id: number; receipt_no: string; amount: number; method: string; title: string; payer: string; created_at: string; settled?: boolean };
 
 export default function FinancePage() {
   const [gateway, setGateway] = useState<Gateway | null>(null);
@@ -90,7 +90,7 @@ export default function FinancePage() {
               <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Save gateway</button>
             </form>
           ) : null}
-          <p className="text-xs text-slate-500">While live charges are off, student payments are collected on the institute ledger and a receipt slip is issued. Razorpay, Cashfree, or BillDesk keys can be stored here for a later live switch.</p>
+          <p className="text-xs text-slate-500">A student can send a claim. The fee is marked paid only when finance posts that claim. Razorpay, Cashfree, and BillDesk still do not take a live charge.</p>
         </div>
       </section>
       <section className="uis-panel mb-4">
@@ -106,7 +106,7 @@ export default function FinancePage() {
       <section className="uis-panel">
         <h2 className="uis-panel-title">Fee register</h2>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500"><tr><th className="px-3 py-2">Receipt</th><th>Payer</th><th>Fee</th><th>Amount</th><th>Method</th></tr></thead>
+          <thead className="text-left text-xs text-slate-500"><tr><th className="px-3 py-2">Receipt</th><th>Payer</th><th>Fee</th><th>Amount</th><th>State</th></tr></thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-t">
@@ -114,7 +114,15 @@ export default function FinancePage() {
                 <td className="px-3 py-2">{row.payer}</td>
                 <td className="px-3 py-2">{row.title}</td>
                 <td className="px-3 py-2">{row.amount}</td>
-                <td className="px-3 py-2">{row.method}</td>
+                <td className="px-3 py-2">
+                  {row.settled === false ? (
+                    <button type="button" className="text-xs font-semibold text-[#0B2A4A]" onClick={async () => {
+                      await apiFetch(`/api/v1/admin/finance/payments/${row.id}/post`, { method: "POST" });
+                      setMsg(`Posted ${row.receipt_no}. The fee ledger now includes this amount.`);
+                      load();
+                    }}>Post to ledger</button>
+                  ) : "Posted"}
+                </td>
               </tr>
             ))}
             {!rows.length ? <tr><td colSpan={5} className="px-3 py-4 text-slate-500">No payments recorded.</td></tr> : null}

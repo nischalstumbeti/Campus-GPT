@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from openpyxl import Workbook
 from pydantic import BaseModel, Field
@@ -33,6 +33,7 @@ from app.security.auth import get_current_user, require_roles
 from app.services.acknowledge import issue_acknowledgement
 from app.services.confirm import PhraseIn, require_phrase
 from app.services.email_service import send_email
+from app.utils.rate_limit import check_rate_limit, client_key
 
 _FILES = Path(__file__).resolve().parents[2] / "data" / "form_files"
 _FILE_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".txt", ".xlsx"}
@@ -877,7 +878,8 @@ async def public_form(code: str, db: Annotated[AsyncSession, Depends(get_db)]):
 
 
 @router.post("/forms/public/{code}/file")
-async def public_file(code: str, db: Annotated[AsyncSession, Depends(get_db)], upload: UploadFile = File(...)):
+async def public_file(code: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], upload: UploadFile = File(...)):
+    check_rate_limit(client_key(request, "form-file"), limit=20, window_seconds=60)
     form = (
         await db.execute(select(ServiceForm).where(ServiceForm.public_code == code, ServiceForm.audience == "open", ServiceForm.is_open.is_(True)))
     ).scalar_one_or_none()
@@ -887,7 +889,8 @@ async def public_file(code: str, db: Annotated[AsyncSession, Depends(get_db)], u
 
 
 @router.post("/forms/public/{code}/submit")
-async def public_submit(code: str, body: PublicSubmit, db: Annotated[AsyncSession, Depends(get_db)]):
+async def public_submit(code: str, body: PublicSubmit, request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
+    check_rate_limit(client_key(request, "form-submit"), limit=10, window_seconds=60)
     form = (
         await db.execute(select(ServiceForm).where(ServiceForm.public_code == code, ServiceForm.audience == "open", ServiceForm.is_open.is_(True)))
     ).scalar_one_or_none()
