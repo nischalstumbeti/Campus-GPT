@@ -864,3 +864,41 @@ class RuntimeSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(String(255), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RequestRoute(Base):
+    """Ordered offices a student letter must pass. Steps are role names separated by commas."""
+
+    __tablename__ = "request_routes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    steps: Mapped[str] = mapped_column(String(200), default="advisor,hod")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class LetterRequest(Base):
+    __tablename__ = "letter_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    route_id: Mapped[int] = mapped_column(ForeignKey("request_routes.id"))
+    subject: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text, default="")
+    step_index: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    note: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class StaffLeave(Base):
+    __tablename__ = "staff_leaves"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    start_date: Mapped[str] = mapped_column(String(16))
+    end_date: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    decided_by: Mapped[str] = mapped_column(String(80), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

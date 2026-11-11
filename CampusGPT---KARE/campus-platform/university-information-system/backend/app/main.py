@@ -67,6 +67,7 @@ from app.routes import (
     marquee,
     messages,
     records,
+    requests,
     student,
 )
 
@@ -607,6 +608,7 @@ app.include_router(integrations.router)
 app.include_router(exam_applications.router)
 app.include_router(hall_ticket.router)
 app.include_router(forms.router)
+app.include_router(requests.router)
 app.include_router(people.router)
 app.include_router(integration.router)
 app.include_router(keep_awake.router)
