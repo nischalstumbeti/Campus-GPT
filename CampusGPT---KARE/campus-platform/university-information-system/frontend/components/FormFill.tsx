@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { API, getToken } from "@/lib/api";
 
-export type FillField = { key: string; label: string; type: string; required: boolean; options: string[]; show_if?: string };
+export type FillField = { key: string; label: string; type: string; required: boolean; options: string[]; show_if?: string; digits?: number };
 
 export function fieldVisible(field: FillField, answers: Record<string, string>) {
   const rule = field.show_if || "";
@@ -22,6 +23,24 @@ export default function FormFill({
   onChange: (key: string, value: string) => void;
   uploadPath?: string;
 }) {
+  const [hints, setHints] = useState<Record<string, string>>({});
+  const onNumber = (field: FillField, raw: string) => {
+    if (raw && /\D/.test(raw)) {
+      setHints({ ...hints, [field.key]: "Only numbers are allowed" });
+      onChange(field.key, raw.replace(/\D/g, ""));
+      return;
+    }
+    const limit = field.digits || 0;
+    if (limit && raw.length > limit) {
+      setHints({ ...hints, [field.key]: `Only ${limit} digits are allowed` });
+      onChange(field.key, raw.slice(0, limit));
+      return;
+    }
+    const next = { ...hints };
+    delete next[field.key];
+    setHints(next);
+    onChange(field.key, raw);
+  };
   const upload = async (key: string, file: File) => {
     if (!uploadPath) return;
     const body = new FormData();
@@ -49,9 +68,12 @@ export default function FormFill({
             </select>
           ) : field.type === "file" ? (
             <input className="mt-1 block text-sm" type="file" onChange={(e) => { const file = e.target.files?.[0]; if (file) upload(field.key, file).catch((error) => onChange(field.key, "")); }} />
+          ) : field.type === "number" ? (
+            <input required={field.required} inputMode="numeric" placeholder={field.digits ? `${field.digits} digits` : "Numbers only"} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={answers[field.key] || ""} onChange={(e) => onNumber(field, e.target.value)} />
           ) : (
-            <input required={field.required && field.type !== "file"} type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "link" ? "url" : "text"} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={answers[field.key] || ""} onChange={(e) => onChange(field.key, e.target.value)} />
+            <input required={field.required && field.type !== "file"} type={field.type === "date" ? "date" : field.type === "link" ? "url" : "text"} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={answers[field.key] || ""} onChange={(e) => onChange(field.key, e.target.value)} />
           )}
+          {hints[field.key] ? <span className="mt-1 block text-red-600">{hints[field.key]}</span> : null}
           {field.type === "file" && answers[field.key] ? <span className="mt-1 block text-emerald-700">File kept</span> : null}
         </label>
       ))}

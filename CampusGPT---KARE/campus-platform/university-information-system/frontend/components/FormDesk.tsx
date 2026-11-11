@@ -5,12 +5,12 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { confirmPhrase } from "@/lib/confirm";
 
-type Field = { label: string; type: string; required: boolean; options: string; show_if?: string };
+type Field = { label: string; type: string; required: boolean; options: string; show_if?: string; digits?: number };
 type Service = { id: number; title: string; instructions: string; audience: string; response_limit: number; is_open: boolean };
 type Answer = { id: number; name: string; identity: string; answers: Record<string, string>; ack_number: string };
 type Layout = { kind: string; institution: string; document_title: string; subtitle: string; footer: string; signatory: string; signatory_title: string };
 
-const EMPTY_FIELD: Field = { label: "", type: "text", required: true, options: "", show_if: "" };
+const EMPTY_FIELD: Field = { label: "", type: "text", required: true, options: "", show_if: "", digits: 0 };
 const ACCOUNT_FIELDS = [
   ["name", "Name"],
   ["email", "Email"],
@@ -48,6 +48,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [slipTitle, setSlipTitle] = useState("FORM ACKNOWLEDGEMENT");
   const [slipSign, setSlipSign] = useState("");
   const [collect, setCollect] = useState<string[]>(["name", "email", "register_or_employee"]);
+  const [sharePath, setSharePath] = useState("");
 
   const load = () => {
     apiFetch<{ items: Service[] }>("/api/v1/forms")
@@ -103,6 +104,8 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     setRedirectUrl(form.redirect_url || "");
     setSlipTitle(form.slip?.document_title || "FORM ACKNOWLEDGEMENT");
     setSlipSign(form.slip?.signatory || "");
+    const shared = data.form as { share_path?: string; is_open?: boolean };
+    setSharePath(shared.is_open ? shared.share_path || "" : "");
   };
 
   const share = async () => {
@@ -193,6 +196,13 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
                 </select>
                 <input className="border rounded px-2 py-1 text-sm" placeholder="Choices, separated by commas" value={field.options} onChange={(e) => setFields(fields.map((item, i) => i === index ? { ...item, options: e.target.value } : item))} />
                 <input className="border rounded px-2 py-1 text-sm" placeholder="Show when f1=Yes" value={field.show_if || ""} onChange={(e) => setFields(fields.map((item, i) => i === index ? { ...item, show_if: e.target.value } : item))} />
+                {field.type === "number" ? (
+                  <select className="border rounded px-2 py-1 text-sm" value={String(field.digits || 0)} onChange={(e) => setFields(fields.map((item, i) => i === index ? { ...item, digits: Number(e.target.value) } : item))}>
+                    <option value="0">Any count of digits</option>
+                    <option value="5">Exactly 5 digits</option>
+                    <option value="10">Exactly 10 digits</option>
+                  </select>
+                ) : null}
                 <label className="text-sm flex items-center gap-2">
                   <input type="checkbox" checked={field.required} onChange={(e) => setFields(fields.map((item, i) => i === index ? { ...item, required: e.target.checked } : item))} />
                   Required
@@ -246,11 +256,20 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
               <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={share}>Save who can respond</button>
               <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
                 await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ is_open: true, audience, collect: audience === "open" ? [] : collect }) });
-                setMsg(audience === "open" ? "Published. Share the open link from Form results." : "Published to signed-in CIMS users.");
+                setMsg("Published. Copy the link below and share it.");
                 load();
+                if (selected) openResponses(selected);
               }}>Publish</button>
               <Link className="px-3 py-1.5 rounded border text-sm" href={`/forms/results/${selected}`}>Charts and export</Link>
             </div>
+            {sharePath ? (
+              <p className="text-sm">
+                Share link{" "}
+                <button type="button" className="underline text-[#0B2A4A]" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${sharePath}`)}>
+                  {sharePath}
+                </button>
+              </p>
+            ) : null}
             <label className="block text-xs text-slate-500">Collaborators who can see responses, not edit the slip
               <textarea className="mt-1 w-full border rounded px-2 py-1 text-sm" rows={2} value={collaborators} onChange={(e) => setCollaborators(e.target.value)} />
             </label>

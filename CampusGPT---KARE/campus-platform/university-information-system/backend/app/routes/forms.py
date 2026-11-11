@@ -85,6 +85,11 @@ def _clean_fields(raw: list) -> list[dict]:
             kind = "text"
         options = [part.strip() for part in str(item.get("options") or "").replace("\n", ",").split(",") if part.strip()][:20]
         show_if = str(item.get("show_if") or "").strip()[:80]
+        try:
+            digits = int(item.get("digits") or 0)
+        except (TypeError, ValueError):
+            digits = 0
+        digits = min(15, max(0, digits))
         cleaned.append(
             {
                 "key": f"f{len(cleaned) + 1}",
@@ -93,6 +98,7 @@ def _clean_fields(raw: list) -> list[dict]:
                 "required": bool(item.get("required", True)),
                 "options": options,
                 "show_if": show_if,
+                "digits": digits if kind == "number" else 0,
             }
         )
     if not cleaned:
@@ -119,6 +125,7 @@ def _public_form(form: ServiceForm, *, used: int = 0, identities: Optional[list[
         "slip": json.loads(form.slip_json or "{}"),
         "public_code": form.public_code or "",
         "collect": _collect(form),
+        "share_path": f"/f/{form.public_code}" if form.audience == "open" and form.public_code else f"/student/forms?open={form.id}",
         "created_at": form.created_at.isoformat() if form.created_at else "",
     }
 
@@ -227,6 +234,7 @@ class FieldIn(BaseModel):
     required: bool = True
     options: str = ""
     show_if: str = ""
+    digits: int = 0
 
 
 class SlipIn(BaseModel):
@@ -608,6 +616,12 @@ def _read_answers(form: ServiceForm, answers: dict) -> tuple[dict, list[str]]:
         value = str(answers.get(field["key"]) or "").strip()
         if field["required"] and not value:
             raise HTTPException(status_code=400, detail=f"Enter {field['label']}")
+        if field["type"] == "number" and value:
+            if not value.isdigit():
+                raise HTTPException(status_code=400, detail=f"{field['label']}: only numbers are allowed")
+            need = int(field.get("digits") or 0)
+            if need and len(value) != need:
+                raise HTTPException(status_code=400, detail=f"{field['label']}: enter exactly {need} digits")
         if field["type"] == "choice" and value and value not in field["options"]:
             raise HTTPException(status_code=400, detail=f"{field['label']} is not one of the allowed choices")
         if field["type"] == "link" and value and not value.startswith(("http://", "https://")):

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import FormFill, { FillField } from "@/components/FormFill";
 import { apiFetch } from "@/lib/api";
@@ -17,6 +18,7 @@ export default function StudentFormsPage() {
   const [note, setNote] = useState("");
   const [redirect, setRedirect] = useState("");
   const [err, setErr] = useState("");
+  const requested = useSearchParams().get("open");
 
   const load = () => {
     apiFetch<{ items: Item[] }>("/api/v1/forms/open")
@@ -26,7 +28,8 @@ export default function StudentFormsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+    if (requested) open(Number(requested)).catch(() => setErr("This form is not open for your account."));
+  }, [requested]);
 
   const open = async (id: number) => {
     setErr("");
