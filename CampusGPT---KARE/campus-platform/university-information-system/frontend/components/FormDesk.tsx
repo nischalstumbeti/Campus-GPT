@@ -4,11 +4,12 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { confirmPhrase } from "@/lib/confirm";
+import { SlipDesign, SlipPaper } from "@/components/SlipPaper";
 
 type Field = { label: string; type: string; required: boolean; options: string; show_if?: string; digits?: number };
 type Service = { id: number; title: string; instructions: string; audience: string; response_limit: number; is_open: boolean };
 type Answer = { id: number; name: string; identity: string; answers: Record<string, string>; ack_number: string };
-type Layout = { kind: string; institution: string; document_title: string; subtitle: string; footer: string; signatory: string; signatory_title: string };
+type Layout = SlipDesign;
 
 const EMPTY_FIELD: Field = { label: "", type: "text", required: true, options: "", show_if: "", digits: 0 };
 const ACCOUNT_FIELDS = [
@@ -36,7 +37,8 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [identities, setIdentities] = useState("");
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [layout, setLayout] = useState<Layout | null>(null);
-  const layoutKind = "general";
+  const [layoutKind, setLayoutKind] = useState("general");
+  const [formSlip, setFormSlip] = useState<SlipDesign | null>(null);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [preview, setPreview] = useState(false);
@@ -103,11 +105,22 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     const data = await apiFetch<{ form: { identities: string[] }; items: Answer[] }>(`/api/v1/forms/desk/${id}/responses`);
     setIdentities("");
     setAnswers(data.items || []);
-    const form = data.form as { email_mode?: string; email_body?: string; confirmation?: string; redirect_url?: string };
+    const form = data.form as { email_mode?: string; email_body?: string; confirmation?: string; redirect_url?: string; slip?: Partial<SlipDesign> };
     setEmailMode(form.email_mode || "acknowledgement");
     setEmailBody(form.email_body || "");
     setConfirmation(form.confirmation || "");
     setRedirectUrl(form.redirect_url || "");
+    setFormSlip({
+      institution: form.slip?.institution || "Kalasalingam Academy of Research and Education",
+      subtitle: form.slip?.subtitle || "University Information System",
+      document_title: form.slip?.document_title || "APPLICATION CONFIRMATION",
+      body: form.slip?.body || "Application number {{number}}\nStatus {{status}}\nDate {{date}}\n\n{{title}}",
+      footer: form.slip?.footer || "This confirmation is for this form only.",
+      signatory: form.slip?.signatory || "",
+      signatory_title: form.slip?.signatory_title || "",
+      show_particulars: form.slip?.show_particulars !== false,
+      show_signatory: Boolean(form.slip?.show_signatory),
+    });
     const shared = data.form as { share_path?: string; is_open?: boolean; allow_edit?: boolean; issue_ack?: boolean };
     setSharePath(shared.is_open ? shared.share_path || "" : "");
     setAllowEdit(Boolean(shared.allow_edit));
@@ -322,11 +335,12 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
               <label className="text-xs text-slate-500">Message text<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} /></label>
               <label className="text-xs text-slate-500">On-screen confirmation<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>
               <label className="text-xs text-slate-500">Destination link<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={redirectUrl} onChange={(e) => setRedirectUrl(e.target.value)} /></label>
-              <p className="text-xs text-slate-500 md:col-span-2">The confirmation is printed like an application page for this form only. It is not signed by a dean or any other office.</p>
+              <p className="text-xs text-slate-500 md:col-span-2">Edit this form’s slip on the page below. The printed acknowledgement uses that page.</p>
             </div>
+            {formSlip ? <SlipPaper editing design={formSlip} onChange={setFormSlip} lines={[{ label: "Sample answer", value: "Shown where particulars are turned on" }]} /> : null}
             <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
-              await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ email_mode: emailMode, email_body: emailBody, confirmation, redirect_url: redirectUrl, slip: { document_title: "APPLICATION CONFIRMATION", signatory: "", institution: "Kalasalingam Academy of Research and Education", subtitle: "", footer: "This confirmation is for this form only.", signatory_title: "" } }) });
-              setMsg("Acknowledgement design and email saved for this form.");
+              await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ email_mode: emailMode, email_body: emailBody, confirmation, redirect_url: redirectUrl, slip: formSlip }) });
+              setMsg("This form’s slip and email were saved.");
             }}>Save slip and email</button>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500"><tr><th className="py-2">Identity</th><th>Answers</th><th>Slip</th></tr></thead>
@@ -346,14 +360,17 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
       </section>
       {manageLayout && layout ? (
         <section className="uis-panel">
-          <h2 className="uis-panel-title">Service acknowledgement</h2>
-          <p className="px-4 pt-3 text-sm text-slate-600">A form is printed as an application confirmation and is not signed. A campus service is signed by the office that owns it: the Dean (Academic) for registration and withdrawal, the Controller of Examinations for examinations, the Finance Officer for fees, and the Registrar for other records.</p>
-          <form onSubmit={saveLayout} className="p-4 grid md:grid-cols-2 gap-2">
-            <label className="text-xs text-slate-500">Institution<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.institution} onChange={(e) => setLayout({ ...layout, institution: e.target.value })} /></label>
-            <label className="text-xs text-slate-500">Subtitle<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.subtitle} onChange={(e) => setLayout({ ...layout, subtitle: e.target.value })} /></label>
-            <label className="text-xs text-slate-500 md:col-span-2">Footer<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.footer} onChange={(e) => setLayout({ ...layout, footer: e.target.value })} /></label>
-            <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Save layout</button>
-          </form>
+          <h2 className="uis-panel-title">Slip design</h2>
+          <p className="px-4 pt-3 text-sm text-slate-600">Choose the service, then edit the page the way it will print. Tokens such as {"{{number}}"} are filled when the slip is issued. A form can also keep its own page from the form above.</p>
+          <div className="p-4 space-y-3">
+            <label className="text-xs text-slate-500">Which slip
+              <select className="mt-1 block border rounded px-2 py-1 text-sm" value={layoutKind} onChange={(e) => setLayoutKind(e.target.value)}>
+                {["general", "form", "registration", "withdrawal", "revaluation", "arrear", "backlog", "makeup", "payment", "complaint"].map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+              </select>
+            </label>
+            <SlipPaper editing design={{ ...layout, kind: layoutKind }} onChange={(next) => setLayout(next)} lines={[{ label: "Particular", value: "Filled from the record" }]} />
+            <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={() => saveLayout({ preventDefault() {} } as FormEvent)}>Save this slip</button>
+          </div>
         </section>
       ) : null}
     </div>

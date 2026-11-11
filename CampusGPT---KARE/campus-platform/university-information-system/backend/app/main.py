@@ -337,6 +337,9 @@ async def _ensure_integrity_columns(conn):
         ("service_forms", "issue_ack", "BOOLEAN DEFAULT 1"),
         ("service_forms", "collect_json", "TEXT DEFAULT '[]'"),
         ("form_collaborators", "can_edit", "BOOLEAN DEFAULT 0"),
+        ("slip_templates", "body", "TEXT DEFAULT ''"),
+        ("slip_templates", "show_particulars", "BOOLEAN DEFAULT 1"),
+        ("slip_templates", "show_signatory", "BOOLEAN DEFAULT 1"),
     ]
     if name == "postgresql":
         schema = os.getenv("UIS_DB_SCHEMA", "uis").strip() or "uis"

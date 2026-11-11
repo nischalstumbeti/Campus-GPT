@@ -716,6 +716,9 @@ class SlipTemplate(Base):
     footer: Mapped[str] = mapped_column(String(400), default="This acknowledgement is generated from the institute record. Keep the number for any later enquiry.")
     signatory: Mapped[str] = mapped_column(String(80), default="Registrar")
     signatory_title: Mapped[str] = mapped_column(String(80), default="Office of the Registrar")
+    body: Mapped[str] = mapped_column(Text, default="")
+    show_particulars: Mapped[bool] = mapped_column(Boolean, default=True)
+    show_signatory: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class ServiceForm(Base):

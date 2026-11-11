@@ -2,6 +2,7 @@
 import csv
 import io
 import json
+import re
 import secrets
 import uuid
 from pathlib import Path
@@ -61,10 +62,35 @@ PROFILE_FIELDS = {
 }
 DEFAULT_COLLECT = ["name", "email", "register_or_employee"]
 LAYOUTS = {
-    "general": ("ACKNOWLEDGEMENT", "Registrar", "Office of the Registrar"),
-    "form": ("APPLICATION CONFIRMATION", "", ""),
-    "registration": ("COURSE REGISTRATION", "Dean, Academic Affairs", "Office of the Dean (Academic)"),
+    "general": ("ACKNOWLEDGEMENT", "Registrar", "Office of the Registrar", True),
+    "form": ("APPLICATION CONFIRMATION", "", "", False),
+    "registration": ("COURSE REGISTRATION", "Dean, Academic Affairs", "Office of the Dean (Academic)", True),
+    "withdrawal": ("COURSE WITHDRAWAL", "Dean, Academic Affairs", "Office of the Dean (Academic)", True),
+    "revaluation": ("REVALUATION APPLICATION", "Controller of Examinations", "Office of the Controller of Examinations", True),
+    "arrear": ("ARREAR APPLICATION", "Controller of Examinations", "Office of the Controller of Examinations", True),
+    "backlog": ("BACKLOG APPLICATION", "Controller of Examinations", "Office of the Controller of Examinations", True),
+    "makeup": ("MAKE-UP APPLICATION", "Controller of Examinations", "Office of the Controller of Examinations", True),
+    "payment": ("FEE RECEIPT", "Finance Officer", "Office of the Finance Officer", True),
+    "complaint": ("COMPLAINT RECEIPT", "Dean, Student Affairs", "Office of the Dean (Student Affairs)", True),
 }
+_TAG = re.compile(r"</?\s*([a-zA-Z0-9]+)[^>]*>")
+_KEEP = {"b", "strong", "i", "em", "u", "br", "p", "div"}
+
+
+def _clean_body(raw: str) -> str:
+    text = re.sub(r"(?is)<script[\s\S]*?</script>|<style[\s\S]*?</style>", "", raw or "")
+
+    def keep(match: re.Match) -> str:
+        tag = match.group(1).lower()
+        if tag not in _KEEP:
+            return ""
+        if tag == "br":
+            return "<br>"
+        if match.group(0).startswith("</"):
+            return f"</{tag}>"
+        return f"<{tag}>"
+
+    return _TAG.sub(keep, text)[:8000]
 
 
 def _is_admin(user: User) -> bool:
@@ -206,7 +232,18 @@ def _attach_profile(form: ServiceForm, user: User | None, stored: dict, lines: l
 
 def _slip(form: ServiceForm) -> dict:
     data = json.loads(form.slip_json or "{}")
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        data = {}
+    data["body"] = _clean_body(str(data.get("body") or ""))
+    data["show_particulars"] = bool(data.get("show_particulars", True))
+    data["show_signatory"] = bool(data.get("show_signatory", False))
+    return data
+
+
+def _stored_slip(slip: SlipIn) -> str:
+    data = slip.model_dump()
+    data["body"] = _clean_body(data.get("body") or "")
+    return json.dumps(data)
 
 
 async def _layout(db: AsyncSession, kind: str) -> SlipTemplate:
@@ -214,8 +251,15 @@ async def _layout(db: AsyncSession, kind: str) -> SlipTemplate:
     row = (await db.execute(select(SlipTemplate).where(SlipTemplate.kind == kind))).scalars().first()
     if row:
         return row
-    title, signatory, office = LAYOUTS[kind]
-    row = SlipTemplate(kind=kind, document_title=title, signatory=signatory, signatory_title=office)
+    title, signatory, office, signed = LAYOUTS[kind]
+    row = SlipTemplate(
+        kind=kind,
+        document_title=title,
+        signatory=signatory,
+        signatory_title=office,
+        show_signatory=signed,
+        body="Number {{number}}\nStatus {{status}}\nDate {{date}}\n\n{{title}}",
+    )
     db.add(row)
     await db.flush()
     return row
@@ -230,6 +274,9 @@ def _layout_public(row: SlipTemplate) -> dict:
         "footer": row.footer,
         "signatory": row.signatory,
         "signatory_title": row.signatory_title,
+        "body": row.body or "",
+        "show_particulars": bool(row.show_particulars),
+        "show_signatory": bool(row.show_signatory),
     }
 
 
@@ -244,11 +291,14 @@ class FieldIn(BaseModel):
 
 class SlipIn(BaseModel):
     institution: str = ""
-    document_title: str = "FORM ACKNOWLEDGEMENT"
+    document_title: str = "APPLICATION CONFIRMATION"
     subtitle: str = ""
     footer: str = ""
     signatory: str = ""
     signatory_title: str = ""
+    body: str = ""
+    show_particulars: bool = True
+    show_signatory: bool = False
 
 
 class FormIn(BaseModel):
@@ -301,6 +351,9 @@ class LayoutIn(BaseModel):
     footer: str = ""
     signatory: str = ""
     signatory_title: str = ""
+    body: str = ""
+    show_particulars: bool = True
+    show_signatory: bool = True
 
 
 class SubmitIn(BaseModel):
@@ -329,6 +382,9 @@ async def save_layout(
     row.footer = body.footer.strip()[:400]
     row.signatory = body.signatory.strip()[:80]
     row.signatory_title = body.signatory_title.strip()[:80]
+    row.body = _clean_body(body.body)
+    row.show_particulars = body.show_particulars
+    row.show_signatory = body.show_signatory
     await db.commit()
     return _layout_public(row)
 
@@ -358,7 +414,7 @@ async def create_form(body: FormIn, user: Annotated[User, Depends(Staff)], db: A
         email_mode=mode,
         email_subject=body.email_subject.strip()[:160],
         email_body=body.email_body.strip()[:4000],
-        slip_json=json.dumps(body.slip.model_dump()),
+        slip_json=_stored_slip(body.slip),
         public_code=secrets.token_urlsafe(8),
         collect_json=json.dumps([key for key in body.collect if key in PROFILE_FIELDS]),
         allow_edit=body.allow_edit,
@@ -408,7 +464,7 @@ async def update_form(
     if body.collect is not None:
         form.collect_json = json.dumps([key for key in body.collect if key in PROFILE_FIELDS])
     if body.slip is not None and _owns(user, form):
-        form.slip_json = json.dumps(body.slip.model_dump())
+        form.slip_json = _stored_slip(body.slip)
     if not form.public_code:
         form.public_code = secrets.token_urlsafe(8)
     if body.fields is not None:
