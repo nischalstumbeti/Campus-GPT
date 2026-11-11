@@ -57,6 +57,7 @@ const STUDENT_MENU: NavEntry[] = [
   { href: "/student/section/feedback", label: "Course Feedback", icon: "message" },
   { href: "/student/announcements", label: "Circulars", icon: "megaphone" },
   { href: "/messages", label: "Messages", icon: "chat" },
+  { href: "/ack", label: "Acknowledgements", icon: "file" },
   { href: "/directory", label: "Directory", icon: "users" },
   { href: "/student/hostel", label: "Hostel", icon: "building" },
   { href: "/student/complaints", label: "Complaints", icon: "alert" },
@@ -361,6 +362,7 @@ const ADMIN: NavItem[] = [
   { href: "/admin/students/view", label: "View students", icon: "users" },
   { href: "/admin/students", label: "Filter / edit students", icon: "clipboard" },
   { href: "/admin/services", label: "Service monitor", icon: "activity" },
+  { href: "/ack", label: "Acknowledgements", icon: "file" },
   { href: "/admin/audit", label: "Audit Logs", icon: "file" },
   { href: "/settings", label: "Change password", icon: "lock" },
 ];

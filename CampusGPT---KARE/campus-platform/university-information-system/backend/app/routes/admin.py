@@ -38,7 +38,9 @@ from app.security.auth import hash_password, require_roles
 from app.services.advisors import list_advisors
 from app.services.service_monitor import check_services
 from app.services.attendance_board import courses_for_student, save_session
+from app.services.acknowledge import issue_acknowledgement
 from app.services.audit import write_audit
+from app.services.confirm import PhraseIn, require_phrase
 from app.services.course_grade import GRADE_POINTS, assign_course_grade
 from app.services.purge import delete_course_record, delete_offerings, delete_user_record
 from app.services.user_photo import apply_photo, photo_data_url
@@ -1482,17 +1484,32 @@ async def update_user(
 @router.delete("/users/{user_id}")
 async def deactivate_user(
     user_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     if user.id == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    target = (
+        await db.execute(select(User).where(User.id == user_id).options(selectinload(User.student)))
+    ).scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    register = target.student.student_id if target.student else ""
+    typed = (body.confirm or "").strip().casefold()
+    if typed not in {target.username.strip().casefold(), register.strip().casefold()} or not typed:
+        require_phrase(body.confirm, target.username)
     label = target.username
+    email = target.email
     await delete_user_record(db, target)
-    await db.commit()
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="delete-user",
+        title="Account deleted",
+        summary=f"Deleted {label} and the academic, fee, hostel, and message rows linked to that account.",
+        email=email,
+    )
     await write_audit(
         db,
         actor="UIS Admin",
@@ -1503,18 +1520,20 @@ async def deactivate_user(
         purpose=label,
         result="ALLOWED",
     )
-    return {"ok": True, "deleted": label}
+    return {"ok": True, "deleted": label, "acknowledgement": ack}
 
 
 @router.post("/users/{user_id}/impersonate")
 async def impersonate_user(
     user_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    require_phrase(body.confirm, target.username)
     if user.id == target.id:
         raise HTTPException(status_code=400, detail="You are already signed in as this account")
     if not target.is_active:
@@ -1885,12 +1904,21 @@ async def get_advisors(
 @router.delete("/advisors/{advisor_id}")
 async def delete_advisor(
     advisor_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    row = (await db.execute(select(FacultyAdvisor).where(FacultyAdvisor.id == advisor_id))).scalar_one_or_none()
+    row = (
+        await db.execute(
+            select(FacultyAdvisor)
+            .where(FacultyAdvisor.id == advisor_id)
+            .options(selectinload(FacultyAdvisor.faculty).selectinload(FacultyProfile.user))
+        )
+    ).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Advisor mapping not found")
+    expected = row.faculty.user.full_name if row.faculty and row.faculty.user else "REMOVE"
+    require_phrase(body.confirm, expected)
     await db.delete(row)
     await db.commit()
     return {"ok": True, "items": await list_advisors(db)}
@@ -2106,15 +2134,25 @@ async def allocation_students(
 @router.delete("/courses/{course_id}")
 async def delete_course(
     course_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     course = (await db.execute(select(Course).where(Course.id == course_id))).scalar_one_or_none()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
+    require_phrase(body.confirm, course.code)
     label = f"{course.code} {course.title}"
+    code = course.code
     await delete_course_record(db, course)
-    await db.commit()
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="delete-course",
+        title="Course deleted",
+        summary=f"Deleted {label}. Sections, enrollments, marks, attendance, timetable periods, and exam venues for {code} were removed from the database.",
+        email=user.email,
+    )
     await write_audit(
         db,
         actor="UIS Admin",
@@ -2125,12 +2163,13 @@ async def delete_course(
         purpose=label,
         result="ALLOWED",
     )
-    return {"ok": True, "deleted": label}
+    return {"ok": True, "deleted": label, "acknowledgement": ack}
 
 
 @router.delete("/allocations/{offering_id}")
 async def delete_allocation(
     offering_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
@@ -2141,9 +2180,19 @@ async def delete_allocation(
     ).scalar_one_or_none()
     if not offering:
         raise HTTPException(status_code=404, detail="Course section not found")
-    label = f"{offering.course.code if offering.course else offering_id} section {offering.section}"
+    code = offering.course.code if offering.course else str(offering_id)
+    phrase = f"{code}-{offering.section}"
+    require_phrase(body.confirm, phrase)
+    label = f"{code} section {offering.section}"
     await delete_offerings(db, [offering.id])
-    await db.commit()
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="delete-section",
+        title="Class section deleted",
+        summary=f"Deleted {label}. Enrollments, marks, and attendance for that section were removed from the database.",
+        email=user.email,
+    )
     await write_audit(
         db,
         actor="UIS Admin",
@@ -2154,7 +2203,7 @@ async def delete_allocation(
         purpose=label,
         result="ALLOWED",
     )
-    return {"ok": True, "deleted": label}
+    return {"ok": True, "deleted": label, "acknowledgement": ack}
 
 
 @router.get("/audit-logs")

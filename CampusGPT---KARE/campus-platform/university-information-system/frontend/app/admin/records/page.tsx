@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
+import { confirmPhrase } from "@/lib/confirm";
 
 type Option = { id: number; label?: string; name?: string; code?: string };
 type CourseRow = {
@@ -191,10 +192,15 @@ function RecordsPage() {
     }
   };
 
-  const remove = async (path: string, label: string) => {
-    if (!window.confirm(`Delete this ${label}?`)) return;
-    const ok = await run(path, "DELETE");
-    if (ok) setMsg(`${label[0].toUpperCase()}${label.slice(1)} deleted.`);
+  const remove = async (path: string, label: string, phrase: string) => {
+    const accepted = await confirmPhrase({
+      title: `Delete this ${label}`,
+      detail: "The row is removed from the database. A slip is saved either way.",
+      phrase,
+    });
+    if (!accepted) return;
+    const ok = await run(path, "DELETE", { confirm: phrase });
+    if (ok) setMsg(`${label[0].toUpperCase()}${label.slice(1)} deleted from the database.`);
   };
 
   return (
@@ -273,7 +279,7 @@ function RecordsPage() {
                       setSlotId(row.id);
                       setSlot({ offering_id: String(row.offering_id), day_of_week: String(row.day_of_week), start_time: row.start_time, end_time: row.end_time, room: row.room });
                     }}
-                    onDelete={() => remove(`/api/v1/admin/records/timetable/${row.id}`, "class period")}
+                    onDelete={() => remove(`/api/v1/admin/records/timetable/${row.id}`, "class period", row.code)}
                   />,
                 ])}
               />
@@ -344,7 +350,7 @@ function RecordsPage() {
                         paper_text: row.paper_text,
                       });
                     }}
-                    onDelete={() => remove(`/api/v1/admin/records/exams/${row.id}`, "examination")}
+                    onDelete={() => remove(`/api/v1/admin/records/exams/${row.id}`, "examination", row.code)}
                   />,
                 ])}
               />
@@ -418,7 +424,7 @@ function RecordsPage() {
                         notes: row.notes,
                       });
                     }}
-                    onDelete={() => remove(`/api/v1/admin/records/office-hours/${row.id}`, "faculty hours")}
+                    onDelete={() => remove(`/api/v1/admin/records/office-hours/${row.id}`, "faculty hours", row.faculty_name || "REMOVE")}
                   />,
                 ])}
               />
@@ -481,7 +487,7 @@ function RecordsPage() {
                         result_group: row.result_group,
                       });
                     }}
-                    onDelete={() => remove(`/api/v1/admin/courses/${row.id}`, "course")}
+                    onDelete={() => remove(`/api/v1/admin/courses/${row.id}`, "course", row.code)}
                   />,
                 ])}
               />

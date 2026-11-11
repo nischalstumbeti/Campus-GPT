@@ -77,10 +77,16 @@ export default function CourseRegister({ kind }: { kind: "registration" | "withd
     setBusy(true);
     setErr("");
     try {
-      await apiFetch(`/api/v1/student/registration?kind=${kind}`, {
+      const result = await apiFetch<{ acknowledgement?: { number: string; email_sent: boolean } }>(`/api/v1/student/registration?kind=${kind}`, {
         method: "POST",
         body: JSON.stringify({ offering_ids: picked }),
       });
+      if (result.acknowledgement) {
+        setErr("");
+        window.alert(
+          `Slip ${result.acknowledgement.number}. Email ${result.acknowledgement.email_sent ? "sent" : "not sent"}. Open Acknowledgements to print it.`
+        );
+      }
       setConfirming(false);
       setPicked([]);
       load();

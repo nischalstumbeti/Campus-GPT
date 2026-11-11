@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { apiDownload, apiFetch, apiUpload } from "@/lib/api";
+import { confirmPhrase } from "@/lib/confirm";
 
 type StudentRow = {
   student_id: string;
@@ -636,13 +637,24 @@ export default function AdminStudents() {
                         className="text-rose-700 text-xs font-semibold"
                         onClick={() => {
                           if (!s.user_id) return;
-                          if (!window.confirm(`Delete ${s.student_id} and all of their academic, fee, hostel, and message records?`)) return;
-                          apiFetch(`/api/v1/admin/users/${s.user_id}`, { method: "DELETE" })
-                            .then(() => {
-                              if (editing?.student_id === s.student_id) setEditing(null);
-                              return load();
+                          const phrase = s.student_id;
+                          confirmPhrase({
+                            title: `Delete ${phrase}`,
+                            detail: "Academic, fee, hostel, and message rows for this student are removed from the database.",
+                            phrase,
+                          }).then((ok) => {
+                            if (!ok) return;
+                            apiFetch(`/api/v1/admin/users/${s.user_id}`, {
+                              method: "DELETE",
+                              body: JSON.stringify({ confirm: phrase }),
                             })
-                            .catch((e) => setMsg(e instanceof Error ? e.message : "Delete failed"));
+                              .then(() => {
+                                if (editing?.student_id === s.student_id) setEditing(null);
+                                setMsg(`Deleted ${phrase} from the database.`);
+                                return load();
+                              })
+                              .catch((e) => setMsg(e instanceof Error ? e.message : "Delete failed"));
+                          });
                         }}
                       >
                         Delete

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import UserEditor from "@/components/UserEditor";
 import { apiDownload, apiFetch, apiUpload } from "@/lib/api";
+import { confirmPhrase } from "@/lib/confirm";
 
 type UserRow = {
   id: number;
@@ -161,15 +162,24 @@ export default function AdminUsersPage() {
   };
 
   const removeUser = async (u: UserRow) => {
-    const ok = window.confirm(
-      `Delete ${u.username} and everything linked to this account (profile, courses, attendance, marks, fees, and messages)? This cannot be undone.`
-    );
+    const ok = await confirmPhrase({
+      title: `Delete ${u.username}`,
+      detail: "This removes the account and the academic, fee, hostel, and message rows from the database.",
+      phrase: u.username,
+    });
     if (!ok) return;
     setBusy(true);
     setMsg("");
     try {
-      const res = await apiFetch<{ deleted: string }>(`/api/v1/admin/users/${u.id}`, { method: "DELETE" });
-      setMsg(`Deleted ${res.deleted} and the records that belonged to that account.`);
+      const res = await apiFetch<{ deleted: string; acknowledgement?: { number: string; email_sent: boolean } }>(
+        `/api/v1/admin/users/${u.id}`,
+        { method: "DELETE", body: JSON.stringify({ confirm: u.username }) }
+      );
+      const ack = res.acknowledgement;
+      setMsg(
+        `Deleted ${res.deleted} from the database.` +
+          (ack ? ` Slip ${ack.number}. Email ${ack.email_sent ? "sent" : "not sent"}.` : "")
+      );
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Delete failed");
@@ -235,13 +245,18 @@ export default function AdminUsersPage() {
   };
 
   const signInAs = async (u: UserRow) => {
-    const ok = window.confirm(`Sign in as ${u.full_name} (${u.username})? You can return to this admin account from the banner.`);
+    const ok = await confirmPhrase({
+      title: `Sign in as ${u.full_name}`,
+      detail: "You can return to this admin account from the banner.",
+      phrase: u.username,
+    });
     if (!ok) return;
     setBusy(true);
     setMsg("");
     try {
       const data = await apiFetch<{ access_token: string; role: string }>(`/api/v1/admin/users/${u.id}/impersonate`, {
         method: "POST",
+        body: JSON.stringify({ confirm: u.username }),
       });
       const current = localStorage.getItem("uis_token");
       if (current) localStorage.setItem("uis_admin_return", current);

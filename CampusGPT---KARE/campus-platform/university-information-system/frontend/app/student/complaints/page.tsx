@@ -49,13 +49,18 @@ export default function StudentComplaintsPage() {
     e.preventDefault();
     setMsg("");
     try {
-      await apiFetch("/api/v1/complaints", {
+      const result = await apiFetch<{ acknowledgement?: { number: string; email_sent: boolean } }>("/api/v1/complaints", {
         method: "POST",
         body: JSON.stringify({ category, subject, description }),
       });
       setSubject("");
       setDescription("");
-      setMsg("Complaint submitted. Faculty / warden / admin can review and resolve it.");
+      const ack = result.acknowledgement;
+      setMsg(
+        ack
+          ? `Complaint submitted. Slip ${ack.number}. Email ${ack.email_sent ? "sent" : "not sent"}.`
+          : "Complaint submitted. Faculty / warden / admin can review and resolve it."
+      );
       load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Could not submit");

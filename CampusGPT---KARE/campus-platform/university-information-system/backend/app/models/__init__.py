@@ -628,6 +628,22 @@ class BrandingSettings(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Acknowledgement(Base):
+    """Stored receipt for a submit or a confirmed delete. The number is the slip."""
+
+    __tablename__ = "acknowledgements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    number: Mapped[str] = mapped_column(String(32), unique=True, default="")
+    kind: Mapped[str] = mapped_column(String(40), default="notice")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    actor_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    recipient_email: Mapped[str] = mapped_column(String(255), default="")
+    email_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class RuntimeSetting(Base):
     """Small admin flags that must survive a process restart on the same disk."""
 

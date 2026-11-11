@@ -46,6 +46,7 @@ from app.models import (  # noqa: F401 — register metadata
     User,
 )
 from app.routes import (
+    acknowledgements,
     admin,
     auth,
     branding,
@@ -455,6 +456,7 @@ app.include_router(messages.router)
 app.include_router(marquee.router)
 app.include_router(branding.router)
 app.include_router(admin.router)
+app.include_router(acknowledgements.router)
 app.include_router(records.router)
 app.include_router(integrations.router)
 app.include_router(exam_applications.router)

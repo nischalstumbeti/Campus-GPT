@@ -21,7 +21,9 @@ from app.models import (
     User,
 )
 from app.security.auth import require_roles
+from app.services.acknowledge import issue_acknowledgement
 from app.services.audit import write_audit
+from app.services.confirm import PhraseIn, require_phrase
 from app.services.payloads import DAYS, faculty_name
 
 router = APIRouter(prefix="/api/v1/admin/records", tags=["admin-records"])
@@ -272,16 +274,32 @@ async def update_slot(
 @router.delete("/timetable/{slot_id}")
 async def delete_slot(
     slot_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    row = (await db.execute(select(TimetableSlot).where(TimetableSlot.id == slot_id))).scalar_one_or_none()
+    row = (
+        await db.execute(
+            select(TimetableSlot)
+            .where(TimetableSlot.id == slot_id)
+            .options(selectinload(TimetableSlot.offering).selectinload(CourseOffering.course))
+        )
+    ).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Class period not found")
+    code = row.offering.course.code if row.offering and row.offering.course else str(slot_id)
+    require_phrase(body.confirm, code)
     await db.delete(row)
-    await db.commit()
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="delete-timetable",
+        title="Class period deleted",
+        summary=f"Deleted the {code} class period from the timetable. The database row was removed.",
+        email=user.email,
+    )
     await _audit(db, user, "timetable", "DELETE", str(slot_id))
-    return {"ok": True}
+    return {"ok": True, "acknowledgement": ack}
 
 
 @router.post("/exams")
@@ -320,16 +338,31 @@ async def update_exam(
 @router.delete("/exams/{exam_id}")
 async def delete_exam(
     exam_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    row = (await db.execute(select(ExamSchedule).where(ExamSchedule.id == exam_id))).scalar_one_or_none()
+    row = (
+        await db.execute(
+            select(ExamSchedule).where(ExamSchedule.id == exam_id).options(selectinload(ExamSchedule.course))
+        )
+    ).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Examination not found")
+    code = row.course.code if row.course else str(exam_id)
+    require_phrase(body.confirm, code)
+    venue = row.venue
     await db.delete(row)
-    await db.commit()
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="delete-exam",
+        title="Examination deleted",
+        summary=f"Deleted the {code} examination at {venue}. The hall ticket will no longer list it.",
+        email=user.email,
+    )
     await _audit(db, user, "exam_schedule", "DELETE", str(exam_id))
-    return {"ok": True}
+    return {"ok": True, "acknowledgement": ack}
 
 
 @router.post("/office-hours")
@@ -378,16 +411,32 @@ async def update_office(
 @router.delete("/office-hours/{row_id}")
 async def delete_office(
     row_id: int,
+    body: PhraseIn,
     user: Annotated[User, Depends(EditRoles)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    row = (await db.execute(select(FacultyAvailability).where(FacultyAvailability.id == row_id))).scalar_one_or_none()
+    row = (
+        await db.execute(
+            select(FacultyAvailability)
+            .where(FacultyAvailability.id == row_id)
+            .options(selectinload(FacultyAvailability.faculty).selectinload(FacultyProfile.user))
+        )
+    ).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Office hour not found")
+    expected = faculty_name(row.faculty) or "REMOVE"
+    require_phrase(body.confirm, expected)
     await db.delete(row)
-    await db.commit()
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="delete-office-hours",
+        title="Faculty hours deleted",
+        summary=f"Deleted office hours for {expected}.",
+        email=user.email,
+    )
     await _audit(db, user, "office_hours", "DELETE", str(row_id))
-    return {"ok": True}
+    return {"ok": True, "acknowledgement": ack}
 
 
 @router.post("/courses")

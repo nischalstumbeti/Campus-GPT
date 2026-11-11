@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
+import { confirmPhrase } from "@/lib/confirm";
 
 type Faculty = { id: number; faculty_id: string; name: string };
 type CourseOption = { id: number; code: string; title: string };
@@ -134,29 +135,53 @@ export default function AllocationPage() {
       setErr("Choose the course to delete.");
       return;
     }
-    if (!window.confirm(`Delete ${course.code} and its sections, enrollments, marks, and attendance? This cannot be undone.`)) return;
+    if (!(await confirmPhrase({
+      title: `Delete ${course.code}`,
+      detail: "Sections, enrollments, marks, attendance, timetable periods, and exam venues for this course are removed from the database.",
+      phrase: course.code,
+    }))) return;
     setErr("");
-    const result = await apiFetch<{ deleted: string }>(`/api/v1/admin/courses/${course.id}`, { method: "DELETE" });
+    const result = await apiFetch<{ deleted: string; acknowledgement?: { number: string; email_sent: boolean } }>(`/api/v1/admin/courses/${course.id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirm: course.code }),
+    });
     setCourseId("");
-    setMessage(`Deleted ${result.deleted} and the records for that course.`);
+    setMessage(`Deleted ${result.deleted} from the database.${result.acknowledgement ? ` Slip ${result.acknowledgement.number}.` : ""}`);
     await load();
   };
 
   const removeOffering = async (row: Offering) => {
-    if (!window.confirm(`Delete ${row.code} section ${row.section}, including student enrollments, marks, and attendance for that section?`)) return;
+    const phrase = `${row.code}-${row.section}`;
+    if (!(await confirmPhrase({
+      title: `Delete ${row.code} section ${row.section}`,
+      detail: "Enrollments, marks, and attendance for this section are removed from the database.",
+      phrase,
+    }))) return;
     setErr("");
-    const result = await apiFetch<{ deleted: string }>(`/api/v1/admin/allocations/${row.offering_id}`, { method: "DELETE" });
+    const result = await apiFetch<{ deleted: string; acknowledgement?: { number: string } }>(`/api/v1/admin/allocations/${row.offering_id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirm: phrase }),
+    });
     if (selected?.offering_id === row.offering_id) {
       setSelected(null);
       setRoster([]);
     }
-    setMessage(`Deleted ${result.deleted}.`);
+    setMessage(`Deleted ${result.deleted} from the database.${result.acknowledgement ? ` Slip ${result.acknowledgement.number}.` : ""}`);
     await load();
   };
 
   const removeAdvisor = async (id: number) => {
-    if (!window.confirm("Remove this faculty advisor mapping?")) return;
-    const data = await apiFetch<{ items: typeof advisors }>(`/api/v1/admin/advisors/${id}`, { method: "DELETE" });
+    const advisor = advisors.find((row) => row.id === id);
+    const phrase = advisor?.faculty_name || "REMOVE";
+    if (!(await confirmPhrase({
+      title: "Remove faculty advisor",
+      detail: "This mapping is removed from the database.",
+      phrase,
+    }))) return;
+    const data = await apiFetch<{ items: typeof advisors }>(`/api/v1/admin/advisors/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirm: phrase }),
+    });
     setAdvisors(data.items || []);
     setMessage("Advisor mapping removed.");
   };

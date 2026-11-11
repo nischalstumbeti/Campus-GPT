@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.security.auth import require_roles
 from app.services.advisors import mentee_ids
+from app.services.acknowledge import issue_acknowledgement
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/api/v1", tags=["exam-applications"])
@@ -518,6 +519,14 @@ async def submit_registration(
             hod_status="pending",
         )
     )
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind=kind,
+        title="Registration submitted" if kind == "registration" else "Withdrawal submitted",
+        summary=f"{kind} for {user.student.student_id}. Courses: {', '.join(str(item) for item in chosen)}. Status: with the faculty advisor.",
+        email=user.email,
+    )
     await write_audit(
         db,
         actor="UIS Student",
@@ -528,7 +537,7 @@ async def submit_registration(
         purpose=f"{kind}:{','.join(str(item) for item in chosen)}",
         result="ALLOWED",
     )
-    return {"ok": True, "status": "submitted"}
+    return {"ok": True, "status": "submitted", "acknowledgement": ack}
 
 
 async def _slip_student(student: StudentProfile) -> dict:

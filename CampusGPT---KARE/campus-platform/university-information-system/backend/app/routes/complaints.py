@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Complaint, CourseOffering, Enrollment, StudentProfile, User
 from app.security.auth import require_roles
+from app.services.acknowledge import issue_acknowledgement
 from app.services.audit import write_audit
 
 router = APIRouter(prefix="/api/v1/complaints", tags=["complaints"])
@@ -137,6 +138,14 @@ async def create_complaint(
             .options(selectinload(Complaint.student).selectinload(StudentProfile.user))
         )
     ).scalar_one()
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="complaint",
+        title="Complaint received",
+        summary=f"Complaint {complaint.id}: {complaint.subject}\nCategory: {category}\nStatus: open",
+        email=user.email,
+    )
     await write_audit(
         db,
         actor="UIS Student",
@@ -147,7 +156,7 @@ async def create_complaint(
         purpose=f"complaint:{complaint.id}:{category}",
         result="ALLOWED",
     )
-    return {"ok": True, "complaint": _serialize(complaint)}
+    return {"ok": True, "complaint": _serialize(complaint), "acknowledgement": ack}
 
 
 @router.get("/mine")
