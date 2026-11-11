@@ -359,7 +359,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
         ) : null}
       </section>
       {manageLayout && layout ? (
-        <section className="uis-panel">
+        <section id="slip-design" className="uis-panel">
           <h2 className="uis-panel-title">Slip design</h2>
           <p className="px-4 pt-3 text-sm text-slate-600">Choose the service, then edit the page the way it will print. Tokens such as {"{{number}}"} are filled when the slip is issued. A form can also keep its own page from the form above.</p>
           <div className="p-4 space-y-3">

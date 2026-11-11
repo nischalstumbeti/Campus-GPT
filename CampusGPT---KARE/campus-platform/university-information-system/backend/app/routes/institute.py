@@ -1,4 +1,6 @@
 """Sidebar, hall-ticket exceptions, the institute gateway, payroll, and the fee register."""
+import random
+from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import (
+    Acknowledgement,
     FeePayment,
     GatewaySetting,
     HallTicketWaiver,
@@ -342,6 +345,100 @@ async def post_payment(
     return {"ok": True, "status": fee.status, "paid_amount": fee.paid_amount, "acknowledgement": ack, "posted_by": user.username}
 
 
+class CollectIn(BaseModel):
+    student_id: str = Field(min_length=1, max_length=32)
+    fee_id: int
+    amount: float = Field(gt=0)
+    method: str = "Cash"
+
+
+@router.get("/api/v1/admin/finance/dues")
+async def fee_dues(
+    student_id: str,
+    _: Annotated[User, Depends(EditRoles)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    profile = (
+        await db.execute(select(StudentProfile).where(StudentProfile.student_id == student_id.strip()))
+    ).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="No student with that register number")
+    person = (await db.execute(select(User).where(User.id == profile.user_id))).scalar_one_or_none()
+    fees = (await db.execute(select(StudentFee).where(StudentFee.user_id == profile.user_id).order_by(StudentFee.id))).scalars().all()
+    return {
+        "name": person.full_name if person else "",
+        "student_id": profile.student_id,
+        "fees": [
+            {
+                "id": fee.id,
+                "title": fee.title,
+                "total_amount": fee.total_amount,
+                "paid_amount": fee.paid_amount,
+                "remaining": max(0.0, round((fee.total_amount or 0) - (fee.paid_amount or 0), 2)),
+                "status": fee.status,
+            }
+            for fee in fees
+        ],
+    }
+
+
+@router.post("/api/v1/admin/finance/collect")
+async def collect_fee(
+    body: CollectIn,
+    user: Annotated[User, Depends(EditRoles)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    profile = (
+        await db.execute(select(StudentProfile).where(StudentProfile.student_id == body.student_id.strip()))
+    ).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="No student with that register number")
+    fee = (
+        await db.execute(select(StudentFee).where(StudentFee.id == body.fee_id, StudentFee.user_id == profile.user_id))
+    ).scalar_one_or_none()
+    if not fee:
+        raise HTTPException(status_code=404, detail="That fee is not on this student's account")
+    remaining = max(0.0, round((fee.total_amount or 0) - (fee.paid_amount or 0), 2))
+    amount = round(body.amount, 2)
+    if amount > remaining + 0.01:
+        raise HTTPException(status_code=400, detail=f"Amount exceeds the {remaining} still due")
+    receipt_no = f"KARE-RCP-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+    row = FeePayment(
+        fee_id=fee.id,
+        amount=amount,
+        method=body.method.strip()[:32] or "Cash",
+        note="Collected at the finance counter",
+        receipt_no=receipt_no,
+        settled=True,
+    )
+    db.add(row)
+    new_paid = round(float(fee.paid_amount or 0) + amount, 2)
+    fee.paid_amount = new_paid
+    fee.status = "paid" if new_paid + 0.01 >= float(fee.total_amount or 0) else "partial"
+    await db.flush()
+    payer = (await db.execute(select(User).where(User.id == profile.user_id))).scalar_one_or_none()
+    ack = await issue_acknowledgement(
+        db,
+        user=payer,
+        kind="payment",
+        title=f"Fee receipt {receipt_no}",
+        summary=(
+            f"Payer: {payer.full_name if payer else ''}\n"
+            f"Register number: {profile.student_id}\n"
+            f"Fee: {fee.title}\n"
+            f"Amount: {amount}\n"
+            f"Method: {row.method}\n"
+            f"Status: collected at the counter\n"
+            f"Receipt: {receipt_no}"
+        ),
+        email=payer.email if payer else None,
+        status=fee.status,
+        ref_key=f"payment:{row.id}",
+    )
+    await db.commit()
+    return {"ok": True, "receipt_no": receipt_no, "status": fee.status, "acknowledgement": ack, "collected_by": user.username}
+
+
 class PayrollIn(BaseModel):
     username: str
     period: str = Field(min_length=4, max_length=16)
@@ -392,7 +489,13 @@ async def my_payroll(user: Annotated[User, Depends(get_current_user)], db: Annot
             select(PayrollEntry).where(PayrollEntry.user_id == user.id).order_by(PayrollEntry.id.desc())
         )
     ).scalars().all()
+    keys = [f"payroll:{user.id}:{row.period}" for row in rows]
+    slips = {}
+    if keys:
+        found = (await db.execute(select(Acknowledgement).where(Acknowledgement.ref_key.in_(keys)))).scalars().all()
+        slips = {row.ref_key: row.number for row in found}
     return {
+        "name": user.full_name,
         "items": [
             {
                 "id": row.id,
@@ -402,6 +505,7 @@ async def my_payroll(user: Annotated[User, Depends(get_current_user)], db: Annot
                 "net": round((row.gross or 0) - (row.deduction or 0), 2),
                 "note": row.note,
                 "status": row.status,
+                "number": slips.get(f"payroll:{user.id}:{row.period}", ""),
             }
             for row in rows
         ]

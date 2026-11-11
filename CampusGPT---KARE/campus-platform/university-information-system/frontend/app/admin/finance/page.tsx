@@ -93,8 +93,12 @@ export default function FinancePage() {
           <p className="text-xs text-slate-500">A student can send a claim. The fee is marked paid only when finance posts that claim. Razorpay, Cashfree, and BillDesk still do not take a live charge.</p>
         </div>
       </section>
-      <section className="uis-panel mb-4">
-        <h2 className="uis-panel-title">Payroll</h2>
+      <section id="collect" className="uis-panel mb-4">
+        <h2 className="uis-panel-title">Collect a fee</h2>
+        <CollectFee onDone={(text) => { setMsg(text); load(); }} onError={setErr} />
+      </section>
+      <section id="payroll" className="uis-panel mb-4">
+        <h2 className="uis-panel-title">Payslip</h2>
         <form onSubmit={savePayroll} className="p-4 grid md:grid-cols-5 gap-2 items-end">
           <label className="text-xs text-slate-500">Username<input required className="mt-1 w-full border rounded px-2 py-1 text-sm" value={pay.username} onChange={(e) => setPay({ ...pay, username: e.target.value })} /></label>
           <label className="text-xs text-slate-500">Period<input required placeholder="2026-11" className="mt-1 w-full border rounded px-2 py-1 text-sm" value={pay.period} onChange={(e) => setPay({ ...pay, period: e.target.value })} /></label>
@@ -130,5 +134,71 @@ export default function FinancePage() {
         </table>
       </section>
     </AppShell>
+  );
+}
+
+function CollectFee({ onDone, onError }: { onDone: (text: string) => void; onError: (text: string) => void }) {
+  const [studentId, setStudentId] = useState("");
+  const [name, setName] = useState("");
+  const [fees, setFees] = useState<{ id: number; title: string; remaining: number; status: string }[]>([]);
+  const [feeId, setFeeId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("Cash");
+
+  const lookup = async () => {
+    onError("");
+    try {
+      const data = await apiFetch<{ name: string; fees: { id: number; title: string; remaining: number; status: string }[] }>(
+        `/api/v1/admin/finance/dues?student_id=${encodeURIComponent(studentId.trim())}`
+      );
+      setName(data.name);
+      setFees(data.fees || []);
+      setFeeId(data.fees?.[0] ? String(data.fees[0].id) : "");
+    } catch (error) {
+      setFees([]);
+      onError(error instanceof Error ? error.message : "Could not find that student");
+    }
+  };
+
+  return (
+    <form
+      className="p-4 grid md:grid-cols-5 gap-2 items-end"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        try {
+          const result = await apiFetch<{ receipt_no: string; acknowledgement?: { number: string } }>("/api/v1/admin/finance/collect", {
+            method: "POST",
+            body: JSON.stringify({ student_id: studentId.trim(), fee_id: Number(feeId), amount: Number(amount), method }),
+          });
+          onDone(`Collected ${result.receipt_no}. Slip ${result.acknowledgement?.number || ""}. The ledger includes this amount.`);
+          setAmount("");
+          lookup();
+        } catch (error) {
+          onError(error instanceof Error ? error.message : "Could not collect the fee");
+        }
+      }}
+    >
+      <label className="text-xs text-slate-500">Register number
+        <input required className="mt-1 w-full border rounded px-2 py-1 text-sm" value={studentId} onChange={(e) => setStudentId(e.target.value)} />
+      </label>
+      <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={lookup}>Find dues</button>
+      <label className="text-xs text-slate-500 md:col-span-2">Fee {name ? `for ${name}` : ""}
+        <select required className="mt-1 w-full border rounded px-2 py-1 text-sm" value={feeId} onChange={(e) => setFeeId(e.target.value)}>
+          {fees.map((fee) => <option key={fee.id} value={fee.id}>{fee.title} · due {fee.remaining} · {fee.status}</option>)}
+        </select>
+      </label>
+      <label className="text-xs text-slate-500">Amount
+        <input required type="number" min={1} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </label>
+      <label className="text-xs text-slate-500">Method
+        <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={method} onChange={(e) => setMethod(e.target.value)}>
+          <option>Cash</option>
+          <option>UPI</option>
+          <option>Card</option>
+          <option>Cheque</option>
+        </select>
+      </label>
+      <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" disabled={!feeId}>Collect and post</button>
+    </form>
   );
 }

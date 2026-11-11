@@ -28,8 +28,8 @@ from app.services.audit import write_audit
 
 router = APIRouter(prefix="/api/v1", tags=["exam-applications"])
 
-KINDS = ("revaluation", "arrear", "backlog", "withdrawal")
-WINDOWS = ("revaluation", "arrear", "backlog", "registration", "withdrawal")
+KINDS = ("revaluation", "arrear", "backlog", "makeup", "withdrawal")
+WINDOWS = ("revaluation", "arrear", "backlog", "makeup", "registration", "withdrawal")
 FAIL = {"F", "RA", "U", "AB", "I"}
 EditRoles = require_roles("university_admin", "admin", "super_admin", "developer", "coe", "director")
 
@@ -47,6 +47,8 @@ def _eligible(kind: str, student_semester: int, course_semester: int, letter: st
         return False
     if kind == "arrear":
         return course_semester == student_semester
+    if kind == "makeup":
+        return course_semester == student_semester and (letter or "").strip().upper() in {"AB", "I"}
     if kind == "backlog":
         return course_semester < student_semester
     return False

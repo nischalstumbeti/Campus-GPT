@@ -40,9 +40,14 @@ const COPY: Record<string, { closed: string; empty: string; action: string }> = 
     empty: "You have no backlog courses from earlier semesters.",
     action: "Register",
   },
+  makeup: {
+    closed: "Make-up examinations are closed. You can apply after an administrator opens them.",
+    empty: "No current-semester course is marked absent, so there is nothing to apply for.",
+    action: "Apply",
+  },
 };
 
-export default function ExamApply({ kind }: { kind: "revaluation" | "arrear" | "backlog" }) {
+export default function ExamApply({ kind }: { kind: "revaluation" | "arrear" | "backlog" | "makeup" }) {
   const [data, setData] = useState<WindowData | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(0);

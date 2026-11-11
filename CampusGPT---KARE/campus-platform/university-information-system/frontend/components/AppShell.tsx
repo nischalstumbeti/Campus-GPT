@@ -37,6 +37,7 @@ const STUDENT_MENU: NavEntry[] = [
       { href: "/student/section/revaluation", label: "Revaluation", icon: "refresh" },
       { href: "/student/section/arrear", label: "Arrear", icon: "alert" },
       { href: "/student/section/backlog", label: "Backlog", icon: "layers" },
+      { href: "/student/section/makeup", label: "Make-up", icon: "plus" },
     ],
   },
   { href: "/student/section/hall-ticket", label: "Hall Ticket", icon: "ticket" },
@@ -46,7 +47,6 @@ const STUDENT_MENU: NavEntry[] = [
   { href: "/student/timetable", label: "Seating & Time Table", icon: "calendar" },
   { href: "/student/section/internships", label: "Internships", icon: "link" },
   { href: "/student/section/non-cgpa", label: "Non CGPA", icon: "layers" },
-  { href: "/student/section/makeup", label: "Make-up", icon: "plus" },
   {
     label: "Fees",
     children: [
@@ -352,7 +352,7 @@ const HOSTEL: NavItem[] = [
   { href: "/settings", label: "Change password", icon: "lock" },
 ];
 
-const ADMIN_SECTIONS: { title: string; items: NavItem[] }[] = [
+const ADMIN_SECTIONS: { title: string; items: NavEntry[] }[] = [
   {
     title: "Campus",
     items: [
@@ -386,23 +386,40 @@ const ADMIN_SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: "Examinations",
     items: [
-      { href: "/admin/applications", label: "Exam applications", icon: "clipboard" },
-      { href: "/admin/hall-ticket", label: "Hall ticket", icon: "ticket" },
-      { href: "/ack", label: "Acknowledgements", icon: "file" },
+      {
+        label: "Examinations",
+        children: [
+          { href: "/admin/applications", label: "Applications", icon: "clipboard" },
+          { href: "/admin/hall-ticket", label: "Hall ticket", icon: "ticket" },
+          { href: "/ack", label: "Acknowledgements", icon: "file" },
+        ],
+      },
     ],
   },
   {
     title: "Finance",
     items: [
-      { href: "/admin/fees", label: "Fee deadlines", icon: "wallet" },
-      { href: "/admin/finance", label: "Finance register", icon: "receipt" },
+      {
+        label: "Finance",
+        children: [
+          { href: "/admin/fees", label: "Fee deadlines", icon: "wallet" },
+          { href: "/admin/finance#collect", label: "Collect a fee", icon: "receipt" },
+          { href: "/admin/finance#payroll", label: "Payslips", icon: "wallet" },
+        ],
+      },
     ],
   },
   {
     title: "Forms",
     items: [
-      { href: "/admin/forms", label: "Forms", icon: "clipboard" },
-      { href: "/forms/results", label: "Form results", icon: "chart" },
+      {
+        label: "Forms",
+        children: [
+          { href: "/admin/forms", label: "Build a form", icon: "clipboard" },
+          { href: "/admin/forms#slip-design", label: "Slip design", icon: "file" },
+          { href: "/forms/results", label: "Form results", icon: "chart" },
+        ],
+      },
     ],
   },
   {
@@ -417,15 +434,42 @@ const ADMIN_SECTIONS: { title: string; items: NavItem[] }[] = [
 ];
 
 function AdminNav({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   return (
     <div className="space-y-3">
       {ADMIN_SECTIONS.map((section) => (
         <div key={section.title}>
           <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{section.title}</p>
           <div className="space-y-0.5">
-            {section.items.map((item) => (
-              <NavItemLink key={item.href} item={item} active={pathname === item.href} onNavigate={onNavigate} />
-            ))}
+            {section.items.map((item) => {
+              if (!isGroup(item)) {
+                return <NavItemLink key={item.href} item={item} active={pathname === item.href} onNavigate={onNavigate} />;
+              }
+              const childActive = item.children.some((child) => pathname === child.href.split("#")[0]);
+              const expanded = open[section.title + item.label] ?? childActive;
+              return (
+                <div key={item.label}>
+                  <button
+                    type="button"
+                    className={`flex w-full items-center gap-2.5 min-h-11 px-3 py-2 rounded-md text-[15px] leading-5 hover:bg-white ${childActive ? "text-brand font-semibold" : "text-slate-800"}`}
+                    onClick={() => setOpen((current) => ({ ...current, [section.title + item.label]: !expanded }))}
+                    aria-expanded={expanded}
+                  >
+                    <span className="flex-1 text-left font-medium">{item.label}</span>
+                    <svg viewBox="0 0 24 24" className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                      <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  {expanded ? (
+                    <div className="ml-3 border-l border-slate-200 pl-2">
+                      {item.children.map((child) => (
+                        <NavItemLink key={child.href} item={child} active={pathname === child.href.split("#")[0]} onNavigate={onNavigate} />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}

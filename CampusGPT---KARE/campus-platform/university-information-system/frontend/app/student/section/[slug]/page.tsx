@@ -68,7 +68,7 @@ export default function StudentSectionPage() {
       <section className="uis-panel">
         <h1 className="uis-panel-title">{title}</h1>
         {err ? <p className="px-4 py-3 text-sm text-red-600">{err}</p> : null}
-        {(slug === "revaluation" || slug === "arrear" || slug === "backlog") && (
+        {(slug === "revaluation" || slug === "arrear" || slug === "backlog" || slug === "makeup") && (
           <ExamApply kind={slug} />
         )}
         {(slug === "registration" || slug === "course-registration") && <CourseRegister kind="registration" />}
@@ -124,7 +124,7 @@ export default function StudentSectionPage() {
             </tbody>
           </table>
         )}
-        {slug !== "attendance" && slug !== "marks" && slug !== "non-cgpa" && slug !== "fee-status" && slug !== "revaluation" && slug !== "arrear" && slug !== "backlog" && slug !== "hall-ticket" && slug !== "registration" && slug !== "course-registration" && slug !== "course-withdrawal" && !err && (
+        {slug !== "attendance" && slug !== "marks" && slug !== "non-cgpa" && slug !== "fee-status" && slug !== "revaluation" && slug !== "arrear" && slug !== "backlog" && slug !== "makeup" && slug !== "hall-ticket" && slug !== "registration" && slug !== "course-registration" && slug !== "course-withdrawal" && !err && (
           <p className="px-4 py-4 text-sm text-slate-600">
             {title} is listed in the student menu. Open Grade, Answer Script, or Fees for the records already published for this semester.
           </p>
