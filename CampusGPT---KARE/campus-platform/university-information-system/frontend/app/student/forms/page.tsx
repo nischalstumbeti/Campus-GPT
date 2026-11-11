@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
@@ -10,7 +10,7 @@ import { apiFetch } from "@/lib/api";
 type Item = { id: number; title: string; instructions: string; response_limit: number; used: number; remaining: number | null };
 type OpenForm = Item & { fields: FillField[]; confirmation?: string; redirect_url?: string; profile?: { label: string; value: string }[]; profile_notice?: string };
 
-export default function StudentFormsPage() {
+function StudentForms() {
   const [items, setItems] = useState<Item[]>([]);
   const [current, setCurrent] = useState<OpenForm | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -108,5 +108,13 @@ export default function StudentFormsPage() {
         </div>
       </section>
     </AppShell>
+  );
+}
+
+export default function StudentFormsPage() {
+  return (
+    <Suspense fallback={<p className="p-4 text-sm text-slate-500">Loading forms…</p>}>
+      <StudentForms />
+    </Suspense>
   );
 }
