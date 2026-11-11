@@ -1,26 +1,48 @@
-"""Services that staff publish as forms, shared by identity, with a printed acknowledgement."""
+"""Forms for collecting responses, with a publisher-designed slip and shared results."""
+import csv
+import io
 import json
+import secrets
+import uuid
+from pathlib import Path
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
+from openpyxl import Workbook
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Acknowledgement, AppNotification, FormGrant, FormResponse, ServiceForm, SlipTemplate, StudentProfile, User
+from app.models import (
+    Acknowledgement,
+    AppNotification,
+    FormCollaborator,
+    FormGrant,
+    FormResponse,
+    ServiceForm,
+    SlipTemplate,
+    StudentProfile,
+    User,
+)
 from app.security.auth import get_current_user, require_roles
 from app.services.acknowledge import issue_acknowledgement
 from app.services.confirm import PhraseIn, require_phrase
+from app.services.email_service import send_email
+
+_FILES = Path(__file__).resolve().parents[2] / "data" / "form_files"
+_FILE_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".txt", ".xlsx"}
 
 router = APIRouter(prefix="/api/v1", tags=["forms"])
 Staff = require_roles(
     "university_admin", "admin", "super_admin", "developer", "operator", "coe", "faculty", "hod", "school_dean", "director"
 )
 Admins = {"university_admin", "admin", "super_admin", "developer", "operator"}
-AUDIENCES = {"all_students", "listed", "any_signed_in"}
-FIELD_TYPES = {"text", "long", "number", "date", "choice"}
+AUDIENCES = {"all_students", "listed", "any_signed_in", "open"}
+FIELD_TYPES = {"text", "long", "number", "date", "choice", "link", "file"}
+EMAIL_MODES = {"none", "acknowledgement", "message"}
 LAYOUTS = {
     "general": ("ACKNOWLEDGEMENT", "Registrar", "Office of the Registrar"),
     "form": ("FORM ACKNOWLEDGEMENT", "Dean", "Office of the Dean"),
@@ -48,6 +70,7 @@ def _clean_fields(raw: list) -> list[dict]:
         if kind not in FIELD_TYPES:
             kind = "text"
         options = [part.strip() for part in str(item.get("options") or "").replace("\n", ",").split(",") if part.strip()][:20]
+        show_if = str(item.get("show_if") or "").strip()[:80]
         cleaned.append(
             {
                 "key": f"f{len(cleaned) + 1}",
@@ -55,6 +78,7 @@ def _clean_fields(raw: list) -> list[dict]:
                 "type": kind,
                 "required": bool(item.get("required", True)),
                 "options": options,
+                "show_if": show_if,
             }
         )
     if not cleaned:
@@ -73,6 +97,13 @@ def _public_form(form: ServiceForm, *, used: int = 0, identities: Optional[list[
         "fields": json.loads(form.fields_json or "[]"),
         "used": used,
         "identities": identities or [],
+        "confirmation": form.confirmation or "",
+        "redirect_url": form.redirect_url or "",
+        "email_mode": form.email_mode or "acknowledgement",
+        "email_subject": form.email_subject or "",
+        "email_body": form.email_body or "",
+        "slip": json.loads(form.slip_json or "{}"),
+        "public_code": form.public_code or "",
         "created_at": form.created_at.isoformat() if form.created_at else "",
     }
 
@@ -85,11 +116,24 @@ def _identities(user: User) -> set[str]:
 
 
 def _allowed(user: User, form: ServiceForm, grants: set[str]) -> bool:
-    if form.audience == "any_signed_in":
+    if form.audience in {"any_signed_in", "open"}:
         return True
     if form.audience == "all_students":
         return user.role == "student"
     return bool(_identities(user) & grants)
+
+
+def _shown(field: dict, answers: dict) -> bool:
+    rule = str(field.get("show_if") or "")
+    if "=" not in rule:
+        return True
+    key, expected = rule.split("=", 1)
+    return str(answers.get(key.strip()) or "") == expected.strip()
+
+
+def _slip(form: ServiceForm) -> dict:
+    data = json.loads(form.slip_json or "{}")
+    return data if isinstance(data, dict) else {}
 
 
 async def _layout(db: AsyncSession, kind: str) -> SlipTemplate:
@@ -121,6 +165,16 @@ class FieldIn(BaseModel):
     type: str = "text"
     required: bool = True
     options: str = ""
+    show_if: str = ""
+
+
+class SlipIn(BaseModel):
+    institution: str = ""
+    document_title: str = "FORM ACKNOWLEDGEMENT"
+    subtitle: str = ""
+    footer: str = ""
+    signatory: str = ""
+    signatory_title: str = ""
 
 
 class FormIn(BaseModel):
@@ -128,7 +182,13 @@ class FormIn(BaseModel):
     instructions: str = ""
     audience: str = "listed"
     response_limit: int = 1
-    is_open: bool = True
+    is_open: bool = False
+    confirmation: str = ""
+    redirect_url: str = ""
+    email_mode: str = "acknowledgement"
+    email_subject: str = ""
+    email_body: str = ""
+    slip: SlipIn = SlipIn()
     fields: list[FieldIn]
 
 
@@ -138,6 +198,12 @@ class FormPatch(BaseModel):
     audience: Optional[str] = None
     response_limit: Optional[int] = None
     is_open: Optional[bool] = None
+    confirmation: Optional[str] = None
+    redirect_url: Optional[str] = None
+    email_mode: Optional[str] = None
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
+    slip: Optional[SlipIn] = None
     fields: Optional[list[FieldIn]] = None
 
 
@@ -198,12 +264,20 @@ async def list_forms(user: Annotated[User, Depends(Staff)], db: Annotated[AsyncS
 async def create_form(body: FormIn, user: Annotated[User, Depends(Staff)], db: Annotated[AsyncSession, Depends(get_db)]):
     audience = body.audience if body.audience in AUDIENCES else "listed"
     limit = max(0, min(int(body.response_limit), 20))
+    mode = body.email_mode if body.email_mode in EMAIL_MODES else "acknowledgement"
     form = ServiceForm(
         title=body.title.strip(),
         instructions=body.instructions.strip()[:2000],
         audience=audience,
         response_limit=limit,
         is_open=body.is_open,
+        confirmation=body.confirmation.strip()[:2000],
+        redirect_url=body.redirect_url.strip()[:500],
+        email_mode=mode,
+        email_subject=body.email_subject.strip()[:160],
+        email_body=body.email_body.strip()[:4000],
+        slip_json=json.dumps(body.slip.model_dump()),
+        public_code=secrets.token_urlsafe(8),
         fields_json=json.dumps(_clean_fields([item.model_dump() for item in body.fields])),
         created_by=user.id,
     )
@@ -232,6 +306,20 @@ async def update_form(
         form.response_limit = max(0, min(int(body.response_limit), 20))
     if body.is_open is not None:
         form.is_open = body.is_open
+    if body.confirmation is not None:
+        form.confirmation = body.confirmation.strip()[:2000]
+    if body.redirect_url is not None:
+        form.redirect_url = body.redirect_url.strip()[:500]
+    if body.email_mode is not None and body.email_mode in EMAIL_MODES:
+        form.email_mode = body.email_mode
+    if body.email_subject is not None:
+        form.email_subject = body.email_subject.strip()[:160]
+    if body.email_body is not None:
+        form.email_body = body.email_body.strip()[:4000]
+    if body.slip is not None and _owns(user, form):
+        form.slip_json = json.dumps(body.slip.model_dump())
+    if not form.public_code:
+        form.public_code = secrets.token_urlsafe(8)
     if body.fields is not None:
         form.fields_json = json.dumps(_clean_fields([item.model_dump() for item in body.fields]))
     await db.commit()
@@ -251,7 +339,8 @@ async def delete_form(
     require_phrase(body.confirm, form.title)
     grants = (await db.execute(select(FormGrant).where(FormGrant.form_id == form.id))).scalars().all()
     answers = (await db.execute(select(FormResponse).where(FormResponse.form_id == form.id))).scalars().all()
-    for row in [*grants, *answers]:
+    collaborators = (await db.execute(select(FormCollaborator).where(FormCollaborator.form_id == form.id))).scalars().all()
+    for row in [*grants, *answers, *collaborators]:
         await db.delete(row)
     await db.delete(form)
     await db.commit()
@@ -285,7 +374,6 @@ async def share_form(
             continue
         seen.add(key)
         db.add(FormGrant(form_id=form.id, identity=token))
-    form.audience = "listed"
     if seen:
         matched = (
             await db.execute(
@@ -308,21 +396,32 @@ async def share_form(
     return {"ok": True, "count": len(seen)}
 
 
+async def _can_view(db: AsyncSession, user: User, form: ServiceForm) -> bool:
+    if _owns(user, form):
+        return True
+    row = (
+        await db.execute(
+            select(FormCollaborator).where(FormCollaborator.form_id == form.id, FormCollaborator.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    return row is not None
+
+
 @router.get("/forms/desk/{form_id}/responses")
 async def form_responses(
     form_id: int,
-    user: Annotated[User, Depends(Staff)],
+    user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     form = (await db.execute(select(ServiceForm).where(ServiceForm.id == form_id))).scalar_one_or_none()
-    if not form or not _owns(user, form):
-        raise HTTPException(status_code=404, detail="Service not found")
+    if not form or not await _can_view(db, user, form):
+        raise HTTPException(status_code=404, detail="Form not found")
     rows = (
         await db.execute(
             select(FormResponse).where(FormResponse.form_id == form.id).order_by(FormResponse.id.desc()).limit(300)
         )
     ).scalars().all()
-    user_ids = [row.user_id for row in rows]
+    user_ids = [row.user_id for row in rows if row.user_id]
     people = {}
     if user_ids:
         found = (
@@ -335,8 +434,8 @@ async def form_responses(
         "items": [
             {
                 "id": row.id,
-                "name": people[row.user_id].full_name if row.user_id in people else "",
-                "identity": (
+                "name": row.guest_name or (people[row.user_id].full_name if row.user_id in people else "Open response"),
+                "identity": row.guest_email or (
                     people[row.user_id].student.student_id
                     if row.user_id in people and people[row.user_id].student
                     else (people[row.user_id].username if row.user_id in people else "")
@@ -347,12 +446,33 @@ async def form_responses(
             }
             for row in rows
         ],
+        "charts": _charts(form, rows),
     }
+
+
+def _charts(form: ServiceForm, rows: list) -> list[dict]:
+    fields = json.loads(form.fields_json or "[]")
+    parsed = [json.loads(row.answers_json or "{}") for row in rows]
+    charts = []
+    for field in fields:
+        if field.get("type") != "choice":
+            continue
+        counts = {option: 0 for option in field.get("options") or []}
+        for answers in parsed:
+            value = str(answers.get(field["key"]) or "")
+            if value in counts:
+                counts[value] += 1
+        charts.append({"key": field["key"], "label": field["label"], "counts": counts})
+    return charts
 
 
 @router.get("/forms/open")
 async def open_forms(user: Annotated[User, Depends(get_current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
-    forms = (await db.execute(select(ServiceForm).where(ServiceForm.is_open.is_(True)).order_by(ServiceForm.id.desc()))).scalars().all()
+    forms = (
+        await db.execute(
+            select(ServiceForm).where(ServiceForm.is_open.is_(True), ServiceForm.audience != "open").order_by(ServiceForm.id.desc())
+        )
+    ).scalars().all()
     form_ids = [form.id for form in forms]
     grants: dict[int, set[str]] = {form.id: set() for form in forms}
     if form_ids:
@@ -405,6 +525,47 @@ async def open_form(form_id: int, user: Annotated[User, Depends(get_current_user
     return _public_form(form, used=used)
 
 
+def _read_answers(form: ServiceForm, answers: dict) -> tuple[dict, list[str]]:
+    fields = json.loads(form.fields_json or "[]")
+    stored = {}
+    lines = []
+    for field in fields:
+        if not _shown(field, answers):
+            continue
+        value = str(answers.get(field["key"]) or "").strip()
+        if field["required"] and not value:
+            raise HTTPException(status_code=400, detail=f"Enter {field['label']}")
+        if field["type"] == "choice" and value and value not in field["options"]:
+            raise HTTPException(status_code=400, detail=f"{field['label']} is not one of the allowed choices")
+        if field["type"] == "link" and value and not value.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail=f"{field['label']} needs a full link")
+        if field["type"] == "file" and value and not (_FILES / Path(value).name).exists():
+            raise HTTPException(status_code=400, detail=f"Upload {field['label']} again")
+        stored[field["key"]] = value[:1000]
+        if value:
+            lines.append(f"{field['label']}: {value}")
+    return stored, lines
+
+
+async def _finish(db, form, response, user, email, identity, lines):
+    mode = form.email_mode or "acknowledgement"
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="form",
+        title=form.title,
+        summary="\n".join([f"Form: {form.title}", f"Identity: {identity}", "Status: submitted", *lines]),
+        email=email if mode == "acknowledgement" else None,
+        status="submitted",
+        ref_key=f"form:{response.id}",
+        notify_kind="form",
+    )
+    if mode == "message" and email:
+        note = form.email_body or "Your response has been recorded."
+        await send_email(email, form.email_subject or form.title, f"<p>{note}</p><p>Acknowledgement {ack['number']}</p>", text_body=f"{note}\n{ack['number']}")
+    return ack
+
+
 @router.post("/forms/open/{form_id}/submit")
 async def submit_form(
     form_id: int,
@@ -427,43 +588,15 @@ async def submit_form(
     )
     if form.response_limit and used >= form.response_limit:
         raise HTTPException(status_code=400, detail="You have already used the responses allowed for this service")
-    fields = json.loads(form.fields_json or "[]")
-    stored = {}
-    lines = []
-    for field in fields:
-        value = str(body.answers.get(field["key"]) or "").strip()
-        if field["required"] and not value:
-            raise HTTPException(status_code=400, detail=f"Enter {field['label']}")
-        if field["type"] == "choice" and value and value not in field["options"]:
-            raise HTTPException(status_code=400, detail=f"{field['label']} is not one of the allowed choices")
-        stored[field["key"]] = value[:1000]
-        if value:
-            lines.append(f"{field['label']}: {value}")
+    stored, lines = _read_answers(form, body.answers)
     identity = user.student.student_id if user.student else user.username
     response = FormResponse(form_id=form.id, user_id=user.id, answers_json=json.dumps(stored))
     db.add(response)
     await db.flush()
-    ack = await issue_acknowledgement(
-        db,
-        user=user,
-        kind="form",
-        title=form.title,
-        summary="\n".join(
-            [
-                f"Form: {form.title}",
-                f"Identity: {identity}",
-                f"Status: submitted",
-                *lines,
-            ]
-        ),
-        email=user.email,
-        status="submitted",
-        ref_key=f"form:{response.id}",
-        notify_kind="form",
-    )
+    ack = await _finish(db, form, response, user, user.email, identity, lines)
     response.ack_number = ack["number"]
     await db.commit()
-    return {"ok": True, "acknowledgement": ack}
+    return {"ok": True, "acknowledgement": ack, "confirmation": form.confirmation, "redirect_url": form.redirect_url}
 
 
 @router.get("/forms/sheet/{number}")
@@ -473,18 +606,247 @@ async def response_sheet(number: str, user: Annotated[User, Depends(get_current_
     if not ack or not response:
         raise HTTPException(status_code=404, detail="Filled response not found")
     form = (await db.execute(select(ServiceForm).where(ServiceForm.id == response.form_id))).scalar_one_or_none()
-    allowed = user.role in Admins or ack.actor_user_id == user.id or (form and form.created_by == user.id)
+    allowed = user.role in Admins or ack.actor_user_id == user.id or (form and await _can_view(db, user, form))
     if not allowed:
         raise HTTPException(status_code=404, detail="Filled response not found")
     answers = json.loads(response.answers_json or "{}")
     fields = json.loads(form.fields_json or "[]") if form else []
-    person = (await db.execute(select(User).where(User.id == response.user_id).options(selectinload(User.student)))).scalar_one_or_none()
+    person = None
+    if response.user_id:
+        person = (await db.execute(select(User).where(User.id == response.user_id).options(selectinload(User.student)))).scalar_one_or_none()
     return {
         "number": number,
         "title": form.title if form else ack.title,
         "instructions": form.instructions if form else "",
-        "identity": person.student.student_id if person and person.student else (person.username if person else ""),
-        "name": person.full_name if person else "",
+        "identity": response.guest_email or (person.student.student_id if person and person.student else (person.username if person else "")),
+        "name": response.guest_name or (person.full_name if person else ""),
         "status": ack.status,
+        "slip": _slip(form) if form else {},
         "fields": [{"label": field["label"], "value": answers.get(field["key"], "")} for field in fields],
     }
+
+
+class PublicSubmit(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict)
+    name: str = ""
+    email: str = ""
+
+
+async def _save_upload(upload: UploadFile) -> str:
+    ext = Path(upload.filename or "").suffix.lower()
+    if ext not in _FILE_EXT:
+        raise HTTPException(status_code=400, detail="Use a pdf, image, Word, text, or Excel file")
+    data = await upload.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File is larger than 5 MB")
+    _FILES.mkdir(parents=True, exist_ok=True)
+    stored = f"{uuid.uuid4().hex}{ext}"
+    (_FILES / stored).write_bytes(data)
+    return stored
+
+
+@router.post("/forms/open/{form_id}/file")
+async def upload_answer_file(
+    form_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    upload: UploadFile = File(...),
+):
+    form = (await db.execute(select(ServiceForm).where(ServiceForm.id == form_id, ServiceForm.is_open.is_(True)))).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="This form is not open")
+    return {"stored": await _save_upload(upload)}
+
+
+@router.get("/forms/public/{code}")
+async def public_form(code: str, db: Annotated[AsyncSession, Depends(get_db)]):
+    form = (
+        await db.execute(select(ServiceForm).where(ServiceForm.public_code == code, ServiceForm.audience == "open", ServiceForm.is_open.is_(True)))
+    ).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="This form is not open")
+    payload = _public_form(form)
+    payload.pop("identities", None)
+    payload.pop("email_body", None)
+    return payload
+
+
+@router.post("/forms/public/{code}/file")
+async def public_file(code: str, db: Annotated[AsyncSession, Depends(get_db)], upload: UploadFile = File(...)):
+    form = (
+        await db.execute(select(ServiceForm).where(ServiceForm.public_code == code, ServiceForm.audience == "open", ServiceForm.is_open.is_(True)))
+    ).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="This form is not open")
+    return {"stored": await _save_upload(upload)}
+
+
+@router.post("/forms/public/{code}/submit")
+async def public_submit(code: str, body: PublicSubmit, db: Annotated[AsyncSession, Depends(get_db)]):
+    form = (
+        await db.execute(select(ServiceForm).where(ServiceForm.public_code == code, ServiceForm.audience == "open", ServiceForm.is_open.is_(True)))
+    ).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="This form is not open")
+    email = body.email.strip()
+    if form.response_limit and email:
+        used = int(
+            await db.scalar(
+                select(func.count()).select_from(FormResponse).where(FormResponse.form_id == form.id, FormResponse.guest_email == email)
+            )
+            or 0
+        )
+        if used >= form.response_limit:
+            raise HTTPException(status_code=400, detail="This email has already used the responses allowed for this form")
+    stored, lines = _read_answers(form, body.answers)
+    response = FormResponse(
+        form_id=form.id,
+        user_id=None,
+        guest_name=body.name.strip()[:120],
+        guest_email=email[:255],
+        answers_json=json.dumps(stored),
+    )
+    db.add(response)
+    await db.flush()
+    ack = await _finish(db, form, response, None, email, email or body.name or "Open response", lines)
+    response.ack_number = ack["number"]
+    await db.commit()
+    return {"ok": True, "acknowledgement": ack, "confirmation": form.confirmation, "redirect_url": form.redirect_url}
+
+
+@router.post("/forms/desk/{form_id}/collaborators")
+async def add_collaborators(
+    form_id: int,
+    body: ShareIn,
+    user: Annotated[User, Depends(Staff)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    form = (await db.execute(select(ServiceForm).where(ServiceForm.id == form_id))).scalar_one_or_none()
+    if not form or not _owns(user, form):
+        raise HTTPException(status_code=404, detail="Form not found")
+    keys = [part.strip().casefold() for part in body.identities.replace(",", "\n").splitlines() if part.strip()]
+    if not keys:
+        raise HTTPException(status_code=400, detail="Enter at least one username or register number")
+    people = (
+        await db.execute(
+            select(User)
+            .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+            .where(or_(func.lower(User.username).in_(keys), func.lower(StudentProfile.student_id).in_(keys)))
+        )
+    ).scalars().all()
+    existing = {
+        row
+        for row in (await db.execute(select(FormCollaborator.user_id).where(FormCollaborator.form_id == form.id))).scalars().all()
+    }
+    added = 0
+    for person in people:
+        if person.id in existing or person.id == form.created_by:
+            continue
+        db.add(FormCollaborator(form_id=form.id, user_id=person.id))
+        db.add(AppNotification(user_id=person.id, kind="form", title=form.title, body="You can view and export the responses.", link=f"/forms/results/{form.id}"))
+        added += 1
+    await db.commit()
+    return {"ok": True, "added": added}
+
+
+@router.get("/forms/results")
+async def result_forms(user: Annotated[User, Depends(get_current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    forms = (await db.execute(select(ServiceForm).order_by(ServiceForm.id.desc()))).scalars().all()
+    visible = []
+    for form in forms:
+        if await _can_view(db, user, form):
+            visible.append({"id": form.id, "title": form.title, "is_open": form.is_open, "public_code": form.public_code if _owns(user, form) else ""})
+    return {"items": visible}
+
+
+def _table(form: ServiceForm, rows: list[FormResponse], people: dict) -> tuple[list[str], list[list[str]]]:
+    fields = json.loads(form.fields_json or "[]")
+    header = ["Acknowledgement", "Name", "Identity", *[field["label"] for field in fields]]
+    body = []
+    for row in rows:
+        person = people.get(row.user_id)
+        answers = json.loads(row.answers_json or "{}")
+        body.append(
+            [
+                row.ack_number,
+                row.guest_name or (person.full_name if person else ""),
+                row.guest_email or (person.student.student_id if person and person.student else (person.username if person else "")),
+                *[str(answers.get(field["key"]) or "") for field in fields],
+            ]
+        )
+    return header, body
+
+
+def _pdf(header: list[str], body: list[list[str]]) -> bytes:
+    lines = [" | ".join(header)]
+    lines.extend(" | ".join(cell.replace("\n", " ")[:40] for cell in row) for row in body[:80])
+    commands = ["BT", "/F1 9 Tf"]
+    y = 800
+    for line in lines:
+        if y < 40:
+            break
+        safe = line.replace("\\", "").replace("(", "[").replace(")", "]")[:140]
+        commands.append(f"1 0 0 1 36 {y} Tm ({safe}) Tj")
+        y -= 14
+    commands.append("ET")
+    stream = "\n".join(commands).encode("latin-1", "replace")
+    objects = [
+        b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n",
+        b"2 0 obj<< /Type /Pages /Count 1 /Kids [3 0 R] >>endobj\n",
+        b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n",
+        f"4 0 obj<< /Length {len(stream)} >>stream\n".encode() + stream + b"\nendstream endobj\n",
+        b"5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n",
+    ]
+    parts = [b"%PDF-1.4\n"]
+    offsets = [0]
+    for item in objects:
+        offsets.append(sum(len(part) for part in parts))
+        parts.append(item)
+    xref = sum(len(part) for part in parts)
+    parts.append(f"xref\n0 {len(offsets)}\n".encode())
+    parts.append(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        parts.append(f"{offset:010d} 00000 n \n".encode())
+    parts.append(f"trailer<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
+    return b"".join(parts)
+
+
+@router.get("/forms/desk/{form_id}/export")
+async def export_responses(
+    form_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    format: str = "csv",
+):
+    form = (await db.execute(select(ServiceForm).where(ServiceForm.id == form_id))).scalar_one_or_none()
+    if not form or not await _can_view(db, user, form):
+        raise HTTPException(status_code=404, detail="Form not found")
+    rows = (await db.execute(select(FormResponse).where(FormResponse.form_id == form.id).order_by(FormResponse.id))).scalars().all()
+    ids = [row.user_id for row in rows if row.user_id]
+    people = {}
+    if ids:
+        found = (await db.execute(select(User).where(User.id.in_(ids)).options(selectinload(User.student)))).scalars().all()
+        people = {row.id: row for row in found}
+    header, body = _table(form, rows, people)
+    stem = "".join(ch if ch.isalnum() else "-" for ch in form.title)[:40] or "form"
+    if format == "xlsx":
+        book = Workbook()
+        sheet = book.active
+        sheet.title = "Responses"
+        sheet.append(header)
+        for row in body:
+            sheet.append(row)
+        buffer = io.BytesIO()
+        book.save(buffer)
+        return Response(
+            buffer.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'},
+        )
+    if format == "pdf":
+        return Response(_pdf(header, body), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    writer.writerows(body)
+    return Response(buffer.getvalue(), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'})

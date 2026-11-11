@@ -54,7 +54,10 @@ export default function AcknowledgementPage() {
         const kind = row.layout_kind || "general";
         apiFetch<Layout>(`/api/v1/slips/layout?kind=${kind}`).then(setLayout).catch(() => setLayout(FALLBACK));
         if (kind === "form") {
-          apiFetch<Sheet>(`/api/v1/forms/sheet/${number}`).then(setSheet).catch(() => setSheet(null));
+          apiFetch<Sheet & { slip?: Layout }>(`/api/v1/forms/sheet/${number}`).then((data) => {
+            setSheet(data);
+            if (data.slip?.institution) setLayout({ ...FALLBACK, ...data.slip });
+          }).catch(() => setSheet(null));
         }
       })
       .catch((e) => setErr(e.message));

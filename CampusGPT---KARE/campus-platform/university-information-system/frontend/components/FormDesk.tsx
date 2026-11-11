@@ -5,12 +5,12 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { confirmPhrase } from "@/lib/confirm";
 
-type Field = { label: string; type: string; required: boolean; options: string };
+type Field = { label: string; type: string; required: boolean; options: string; show_if?: string };
 type Service = { id: number; title: string; instructions: string; audience: string; response_limit: number; is_open: boolean };
 type Answer = { id: number; name: string; identity: string; answers: Record<string, string>; ack_number: string };
 type Layout = { kind: string; institution: string; document_title: string; subtitle: string; footer: string; signatory: string; signatory_title: string };
 
-const EMPTY_FIELD: Field = { label: "", type: "text", required: true, options: "" };
+const EMPTY_FIELD: Field = { label: "", type: "text", required: true, options: "", show_if: "" };
 
 export default function FormDesk({ manageLayout = false }: { manageLayout?: boolean }) {
   const [items, setItems] = useState<Service[]>([]);
@@ -26,6 +26,14 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [layoutKind, setLayoutKind] = useState("form");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [preview, setPreview] = useState(false);
+  const [collaborators, setCollaborators] = useState("");
+  const [emailMode, setEmailMode] = useState("acknowledgement");
+  const [emailBody, setEmailBody] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [redirectUrl, setRedirectUrl] = useState("");
+  const [slipTitle, setSlipTitle] = useState("FORM ACKNOWLEDGEMENT");
+  const [slipSign, setSlipSign] = useState("");
 
   const load = () => {
     apiFetch<{ items: Service[] }>("/api/v1/forms")
@@ -51,15 +59,16 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
           instructions,
           audience,
           response_limit: Number(limit),
-          is_open: true,
+          is_open: false,
           fields: fields.filter((field) => field.label.trim()),
         }),
       });
       setTitle("");
       setInstructions("");
       setFields([{ ...EMPTY_FIELD }]);
+      setPreview(false);
       setSelected(saved.id);
-      setMsg("Service published. Share register numbers if only those students may fill it.");
+      setMsg("Draft saved. Preview it, then publish from the form below.");
       load();
     } catch (error) {
       setErr(error instanceof Error ? error.message : "Could not publish the service");
@@ -72,6 +81,13 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     const data = await apiFetch<{ form: { identities: string[] }; items: Answer[] }>(`/api/v1/forms/desk/${id}/responses`);
     setIdentities((data.form.identities || []).join("\n"));
     setAnswers(data.items || []);
+    const form = data.form as { email_mode?: string; email_body?: string; confirmation?: string; redirect_url?: string; slip?: { document_title?: string; signatory?: string } };
+    setEmailMode(form.email_mode || "acknowledgement");
+    setEmailBody(form.email_body || "");
+    setConfirmation(form.confirmation || "");
+    setRedirectUrl(form.redirect_url || "");
+    setSlipTitle(form.slip?.document_title || "FORM ACKNOWLEDGEMENT");
+    setSlipSign(form.slip?.signatory || "");
   };
 
   const share = async () => {
@@ -125,9 +141,10 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
           <div className="grid md:grid-cols-2 gap-2">
             <label className="text-xs text-slate-500">Who can open it
               <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={audience} onChange={(e) => setAudience(e.target.value)}>
-                <option value="listed">Only the register numbers or usernames I share</option>
+                <option value="any_signed_in">Any signed-in CIMS user</option>
+                <option value="listed">Only these signed-in identities</option>
                 <option value="all_students">Every signed-in student</option>
-                <option value="any_signed_in">Any signed-in user</option>
+                <option value="open">Open link, no CIMS account</option>
               </select>
             </label>
             <label className="text-xs text-slate-500">Responses allowed for one identity (0 = no limit)
@@ -144,8 +161,11 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
                   <option value="number">Number</option>
                   <option value="date">Date</option>
                   <option value="choice">Choice</option>
+                  <option value="link">Link</option>
+                  <option value="file">File</option>
                 </select>
                 <input className="border rounded px-2 py-1 text-sm" placeholder="Choices, separated by commas" value={field.options} onChange={(e) => setFields(fields.map((item, i) => i === index ? { ...item, options: e.target.value } : item))} />
+                <input className="border rounded px-2 py-1 text-sm" placeholder="Show when f1=Yes" value={field.show_if || ""} onChange={(e) => setFields(fields.map((item, i) => i === index ? { ...item, show_if: e.target.value } : item))} />
                 <label className="text-sm flex items-center gap-2">
                   <input type="checkbox" checked={field.required} onChange={(e) => setFields(fields.map((item, i) => i === index ? { ...item, required: e.target.checked } : item))} />
                   Required
@@ -154,7 +174,20 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
             ))}
             <button type="button" className="text-sm underline" onClick={() => setFields([...fields, { ...EMPTY_FIELD }])}>Add question</button>
           </div>
-          <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Publish form</button>
+          <div className="flex gap-2">
+            <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={() => setPreview((value) => !value)}>Preview</button>
+            <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Save draft</button>
+          </div>
+          {preview ? (
+            <div className="border rounded p-3 bg-slate-50">
+              <p className="text-xs text-slate-500 mb-2">Preview only. Nothing is stored.</p>
+              <p className="font-medium">{title || "Untitled form"}</p>
+              <p className="text-sm whitespace-pre-wrap text-slate-600">{instructions}</p>
+              <ul className="mt-2 text-sm list-disc pl-4">
+                {fields.filter((field) => field.label.trim()).map((field) => <li key={field.label}>{field.label} · {field.type}{field.show_if ? ` · shown when ${field.show_if}` : ""}</li>)}
+              </ul>
+            </div>
+          ) : null}
         </form>
       </section>
       <section className="uis-panel">
@@ -181,8 +214,41 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
             <label className="block text-xs text-slate-500">Register numbers or usernames, one on each line
               <textarea className="mt-1 w-full border rounded px-2 py-1 text-sm" rows={4} value={identities} onChange={(e) => setIdentities(e.target.value)} />
             </label>
-            <p className="text-xs text-slate-500">Saving this list limits the service to these identities. A person must be signed in with that register number or username.</p>
-            <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={share}>Save sharing list</button>
+            <p className="text-xs text-slate-500">Named identities must sign in. An open form uses its public link instead.</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={share}>Save who can respond</button>
+              <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
+                await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ is_open: true, audience }) });
+                setMsg(audience === "open" ? "Published. Share the open link from Form results." : "Published to signed-in CIMS users.");
+                load();
+              }}>Publish</button>
+              <Link className="px-3 py-1.5 rounded border text-sm" href={`/forms/results/${selected}`}>Charts and export</Link>
+            </div>
+            <label className="block text-xs text-slate-500">Collaborators who can see responses, not edit the slip
+              <textarea className="mt-1 w-full border rounded px-2 py-1 text-sm" rows={2} value={collaborators} onChange={(e) => setCollaborators(e.target.value)} />
+            </label>
+            <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
+              const result = await apiFetch<{ added: number }>(`/api/v1/forms/desk/${selected}/collaborators`, { method: "POST", body: JSON.stringify({ identities: collaborators }) });
+              setMsg(`${result.added} collaborator${result.added === 1 ? "" : "s"} can now export the responses.`);
+            }}>Add collaborators</button>
+            <div className="grid md:grid-cols-2 gap-2">
+              <label className="text-xs text-slate-500">After submit, email
+                <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={emailMode} onChange={(e) => setEmailMode(e.target.value)}>
+                  <option value="acknowledgement">Acknowledgement slip</option>
+                  <option value="message">A normal message</option>
+                  <option value="none">Do not email</option>
+                </select>
+              </label>
+              <label className="text-xs text-slate-500">Message text<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} /></label>
+              <label className="text-xs text-slate-500">On-screen confirmation<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>
+              <label className="text-xs text-slate-500">Destination link<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={redirectUrl} onChange={(e) => setRedirectUrl(e.target.value)} /></label>
+              <label className="text-xs text-slate-500">Slip title<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={slipTitle} onChange={(e) => setSlipTitle(e.target.value)} /></label>
+              <label className="text-xs text-slate-500">Slip signatory<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={slipSign} onChange={(e) => setSlipSign(e.target.value)} /></label>
+            </div>
+            <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
+              await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ email_mode: emailMode, email_body: emailBody, confirmation, redirect_url: redirectUrl, slip: { document_title: slipTitle, signatory: slipSign, institution: "Kalasalingam Academy of Research and Education", subtitle: "", footer: "Keep this acknowledgement number.", signatory_title: "" } }) });
+              setMsg("Acknowledgement design and email saved for this form.");
+            }}>Save slip and email</button>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500"><tr><th className="py-2">Identity</th><th>Answers</th><th>Slip</th></tr></thead>
               <tbody>

@@ -3,17 +3,19 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import FormFill, { FillField } from "@/components/FormFill";
 import { apiFetch } from "@/lib/api";
 
 type Item = { id: number; title: string; instructions: string; response_limit: number; used: number; remaining: number | null };
-type Field = { key: string; label: string; type: string; required: boolean; options: string[] };
-type OpenForm = Item & { fields: Field[] };
+type OpenForm = Item & { fields: FillField[]; confirmation?: string; redirect_url?: string };
 
 export default function StudentFormsPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [current, setCurrent] = useState<OpenForm | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [slip, setSlip] = useState("");
+  const [note, setNote] = useState("");
+  const [redirect, setRedirect] = useState("");
   const [err, setErr] = useState("");
 
   const load = () => {
@@ -39,11 +41,13 @@ export default function StudentFormsPage() {
     if (!current) return;
     setErr("");
     try {
-      const result = await apiFetch<{ acknowledgement: { number: string } }>(`/api/v1/forms/open/${current.id}/submit`, {
+      const result = await apiFetch<{ acknowledgement: { number: string }; confirmation?: string; redirect_url?: string }>(`/api/v1/forms/open/${current.id}/submit`, {
         method: "POST",
         body: JSON.stringify({ answers }),
       });
       setSlip(result.acknowledgement.number);
+      setNote(result.confirmation || "");
+      setRedirect(result.redirect_url || "");
       setCurrent(null);
       load();
     } catch (error) {
@@ -57,7 +61,7 @@ export default function StudentFormsPage() {
         <h1 className="uis-panel-title">Forms</h1>
         <div className="p-4 space-y-3">
           {err ? <p className="text-sm text-red-600">{err}</p> : null}
-          {slip ? <p className="text-sm text-emerald-700">Submitted. Acknowledgement <Link className="underline" href={`/ack/${slip}`}>{slip}</Link></p> : null}
+          {slip ? <p className="text-sm text-emerald-700">Submitted. Acknowledgement <Link className="underline" href={`/ack/${slip}`}>{slip}</Link>{note ? ` ${note}` : ""}{redirect ? <> <a className="underline" href={redirect}>Continue</a></> : null}</p> : null}
           {!current ? (
             <ul className="divide-y">
               {items.map((item) => (
@@ -80,21 +84,7 @@ export default function StudentFormsPage() {
             <form onSubmit={submit} className="space-y-3">
               <h2 className="font-semibold text-[#0B2A4A]">{current.title}</h2>
               {current.instructions ? <p className="text-sm whitespace-pre-wrap text-slate-600">{current.instructions}</p> : null}
-              {current.fields.map((field) => (
-                <label key={field.key} className="block text-xs text-slate-500">
-                  {field.label}{field.required ? " *" : ""}
-                  {field.type === "long" ? (
-                    <textarea required={field.required} className="mt-1 w-full border rounded px-2 py-1 text-sm" rows={3} value={answers[field.key] || ""} onChange={(e) => setAnswers({ ...answers, [field.key]: e.target.value })} />
-                  ) : field.type === "choice" ? (
-                    <select required={field.required} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={answers[field.key] || ""} onChange={(e) => setAnswers({ ...answers, [field.key]: e.target.value })}>
-                      <option value="">Select</option>
-                      {field.options.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                  ) : (
-                    <input required={field.required} type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={answers[field.key] || ""} onChange={(e) => setAnswers({ ...answers, [field.key]: e.target.value })} />
-                  )}
-                </label>
-              ))}
+              <FormFill fields={current.fields} answers={answers} onChange={(key, value) => setAnswers({ ...answers, [key]: value })} uploadPath={`/api/v1/forms/open/${current.id}/file`} />
               <div className="flex gap-2">
                 <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Submit</button>
                 <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={() => setCurrent(null)}>Back</button>

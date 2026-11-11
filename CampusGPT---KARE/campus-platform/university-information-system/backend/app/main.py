@@ -319,6 +319,54 @@ async def _ensure_slip_kind(conn):
         await conn.execute(text("ALTER TABLE slip_templates ADD COLUMN kind VARCHAR(24) DEFAULT 'general'"))
 
 
+async def _ensure_form_extras(conn):
+    """Columns added after the first form tables were created."""
+    from sqlalchemy import text
+
+    name = getattr(getattr(conn, "dialect", None), "name", "") or ""
+    if name != "sqlite":
+        return
+
+    def _info(sync_conn, table):
+        rows = sync_conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        return {row[1]: row for row in rows}
+
+    forms = await conn.run_sync(lambda sync_conn: _info(sync_conn, "service_forms"))
+    if forms:
+        alters = {
+            "confirmation": "ALTER TABLE service_forms ADD COLUMN confirmation TEXT DEFAULT ''",
+            "redirect_url": "ALTER TABLE service_forms ADD COLUMN redirect_url VARCHAR(500) DEFAULT ''",
+            "email_mode": "ALTER TABLE service_forms ADD COLUMN email_mode VARCHAR(24) DEFAULT 'acknowledgement'",
+            "email_subject": "ALTER TABLE service_forms ADD COLUMN email_subject VARCHAR(160) DEFAULT ''",
+            "email_body": "ALTER TABLE service_forms ADD COLUMN email_body TEXT DEFAULT ''",
+            "slip_json": "ALTER TABLE service_forms ADD COLUMN slip_json TEXT DEFAULT '{}'",
+            "public_code": "ALTER TABLE service_forms ADD COLUMN public_code VARCHAR(32) DEFAULT ''",
+        }
+        for column, statement in alters.items():
+            if column not in forms:
+                await conn.execute(text(statement))
+    answers = await conn.run_sync(lambda sync_conn: _info(sync_conn, "form_responses"))
+    if not answers:
+        return
+    if "guest_name" not in answers:
+        await conn.execute(text("ALTER TABLE form_responses ADD COLUMN guest_name VARCHAR(120) DEFAULT ''"))
+    if "guest_email" not in answers:
+        await conn.execute(text("ALTER TABLE form_responses ADD COLUMN guest_email VARCHAR(255) DEFAULT ''"))
+    user_col = answers.get("user_id")
+    if user_col is not None and user_col[3]:
+        await conn.execute(text(
+            "CREATE TABLE form_responses_open (id INTEGER PRIMARY KEY, form_id INTEGER, user_id INTEGER, "
+            "guest_name VARCHAR(120) DEFAULT '', guest_email VARCHAR(255) DEFAULT '', answers_json TEXT DEFAULT '{}', "
+            "ack_number VARCHAR(32) DEFAULT '', created_at DATETIME)"
+        ))
+        await conn.execute(text(
+            "INSERT INTO form_responses_open (id, form_id, user_id, guest_name, guest_email, answers_json, ack_number, created_at) "
+            "SELECT id, form_id, user_id, '', '', answers_json, ack_number, created_at FROM form_responses"
+        ))
+        await conn.execute(text("DROP TABLE form_responses"))
+        await conn.execute(text("ALTER TABLE form_responses_open RENAME TO form_responses"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.environment.lower() == "production":
@@ -348,6 +396,7 @@ async def lifespan(app: FastAPI):
                 await _ensure_hall_ticket_columns(conn)
                 await _ensure_ack_columns(conn)
                 await _ensure_slip_kind(conn)
+                await _ensure_form_extras(conn)
             except Exception:
                 pass
     except Exception as exc:

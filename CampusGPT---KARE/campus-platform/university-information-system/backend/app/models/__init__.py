@@ -727,6 +727,13 @@ class ServiceForm(Base):
     response_limit: Mapped[int] = mapped_column(Integer, default=1)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
     fields_json: Mapped[str] = mapped_column(Text, default="[]")
+    confirmation: Mapped[str] = mapped_column(Text, default="")
+    redirect_url: Mapped[str] = mapped_column(String(500), default="")
+    email_mode: Mapped[str] = mapped_column(String(24), default="acknowledgement")
+    email_subject: Mapped[str] = mapped_column(String(160), default="")
+    email_body: Mapped[str] = mapped_column(Text, default="")
+    slip_json: Mapped[str] = mapped_column(Text, default="{}")
+    public_code: Mapped[str] = mapped_column(String(32), default="", index=True)
     created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -742,12 +749,25 @@ class FormGrant(Base):
     identity: Mapped[str] = mapped_column(String(64))
 
 
+class FormCollaborator(Base):
+    """Someone the publisher allows to see and export responses, not to redesign the form."""
+
+    __tablename__ = "form_collaborators"
+    __table_args__ = (UniqueConstraint("form_id", "user_id", name="uq_form_collaborator"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    form_id: Mapped[int] = mapped_column(ForeignKey("service_forms.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+
 class FormResponse(Base):
     __tablename__ = "form_responses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("service_forms.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    guest_name: Mapped[str] = mapped_column(String(120), default="")
+    guest_email: Mapped[str] = mapped_column(String(255), default="")
     answers_json: Mapped[str] = mapped_column(Text, default="{}")
     ack_number: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

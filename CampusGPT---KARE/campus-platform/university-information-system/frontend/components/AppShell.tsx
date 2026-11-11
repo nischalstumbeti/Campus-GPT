@@ -58,6 +58,7 @@ const STUDENT_MENU: NavEntry[] = [
   { href: "/student/announcements", label: "Circulars", icon: "megaphone" },
   { href: "/messages", label: "Messages", icon: "chat" },
   { href: "/student/forms", label: "Forms", icon: "clipboard" },
+  { href: "/forms/results", label: "Form results", icon: "chart" },
   { href: "/community", label: "Community", icon: "users" },
   { href: "/ack", label: "Acknowledgements", icon: "file" },
   { href: "/directory", label: "Directory", icon: "users" },
@@ -222,6 +223,7 @@ const FACULTY_SECTIONS: { title: string; items: FacultyNode[] }[] = [
       { href: "/faculty/timetable", label: "My Class Time Table", icon: "calendar" },
       { href: "/faculty/payroll", label: "Payroll", icon: "wallet" },
       { href: "/faculty/forms", label: "Forms", icon: "clipboard" },
+      { href: "/forms/results", label: "Form results", icon: "chart" },
       { href: "/community", label: "Community", icon: "users" },
       { href: "/faculty/module/biometric", label: "Attendance", icon: "check" },
       {
@@ -358,6 +360,7 @@ const ADMIN: NavItem[] = [
   { href: "/admin/finance", label: "Finance", icon: "receipt" },
   { href: "/admin/menu", label: "Sidebar", icon: "folder" },
   { href: "/admin/forms", label: "Forms", icon: "clipboard" },
+  { href: "/forms/results", label: "Form results", icon: "chart" },
   { href: "/admin/groups", label: "Groups", icon: "users" },
   { href: "/community", label: "Community", icon: "users" },
   { href: "/admin/allocation", label: "Course allocation", icon: "clipboard" },
