@@ -56,6 +56,7 @@ from app.routes import (
     fees,
     directory,
     hall_ticket,
+    forms,
     hostel,
     integration,
     keep_awake,
@@ -485,6 +486,7 @@ app.include_router(records.router)
 app.include_router(integrations.router)
 app.include_router(exam_applications.router)
 app.include_router(hall_ticket.router)
+app.include_router(forms.router)
 app.include_router(integration.router)
 app.include_router(keep_awake.router)
 

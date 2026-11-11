@@ -700,6 +700,58 @@ class PayrollEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class SlipTemplate(Base):
+    """Letterhead used when an acknowledgement is printed."""
+
+    __tablename__ = "slip_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    institution: Mapped[str] = mapped_column(String(160), default="Kalasalingam Academy of Research and Education")
+    document_title: Mapped[str] = mapped_column(String(80), default="ACKNOWLEDGEMENT")
+    subtitle: Mapped[str] = mapped_column(String(160), default="University Information System")
+    footer: Mapped[str] = mapped_column(String(400), default="This acknowledgement is generated from the institute record. Keep the number for any later enquiry.")
+    signatory: Mapped[str] = mapped_column(String(80), default="Registrar")
+    signatory_title: Mapped[str] = mapped_column(String(80), default="Office of the Registrar")
+
+
+class ServiceForm(Base):
+    """A service an administrator or staff member publishes without a code change."""
+
+    __tablename__ = "service_forms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(120))
+    instructions: Mapped[str] = mapped_column(Text, default="")
+    audience: Mapped[str] = mapped_column(String(24), default="listed")
+    response_limit: Mapped[int] = mapped_column(Integer, default=1)
+    is_open: Mapped[bool] = mapped_column(Boolean, default=True)
+    fields_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FormGrant(Base):
+    """Register number or username allowed to open a listed form."""
+
+    __tablename__ = "form_grants"
+    __table_args__ = (UniqueConstraint("form_id", "identity", name="uq_form_grant"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    form_id: Mapped[int] = mapped_column(ForeignKey("service_forms.id"), index=True)
+    identity: Mapped[str] = mapped_column(String(64))
+
+
+class FormResponse(Base):
+    __tablename__ = "form_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    form_id: Mapped[int] = mapped_column(ForeignKey("service_forms.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    answers_json: Mapped[str] = mapped_column(Text, default="{}")
+    ack_number: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class RuntimeSetting(Base):
     """Small admin flags that must survive a process restart on the same disk."""
 
