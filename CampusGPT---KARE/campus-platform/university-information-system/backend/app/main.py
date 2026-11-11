@@ -340,6 +340,9 @@ async def _ensure_integrity_columns(conn):
         ("slip_templates", "body", "TEXT DEFAULT ''"),
         ("slip_templates", "show_particulars", "BOOLEAN DEFAULT 1"),
         ("slip_templates", "show_signatory", "BOOLEAN DEFAULT 1"),
+        ("slip_templates", "page_size", "VARCHAR(16) DEFAULT 'a4'"),
+        ("slip_templates", "orientation", "VARCHAR(16) DEFAULT 'portrait'"),
+        ("slip_templates", "font_family", "VARCHAR(40) DEFAULT 'Georgia'"),
     ]
     if name == "postgresql":
         schema = os.getenv("UIS_DB_SCHEMA", "uis").strip() or "uis"

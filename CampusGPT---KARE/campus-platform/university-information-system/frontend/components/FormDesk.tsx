@@ -120,6 +120,9 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
       signatory_title: form.slip?.signatory_title || "",
       show_particulars: form.slip?.show_particulars !== false,
       show_signatory: Boolean(form.slip?.show_signatory),
+      page_size: form.slip?.page_size || "a4",
+      orientation: form.slip?.orientation || "portrait",
+      font_family: form.slip?.font_family || "Georgia",
     });
     const shared = data.form as { share_path?: string; is_open?: boolean; allow_edit?: boolean; issue_ack?: boolean };
     setSharePath(shared.is_open ? shared.share_path || "" : "");

@@ -74,7 +74,46 @@ LAYOUTS = {
     "complaint": ("COMPLAINT RECEIPT", "Dean, Student Affairs", "Office of the Dean (Student Affairs)", True),
 }
 _TAG = re.compile(r"</?\s*([a-zA-Z0-9]+)[^>]*>")
-_KEEP = {"b", "strong", "i", "em", "u", "br", "p", "div"}
+_KEEP = {"b", "strong", "i", "em", "u", "br", "p", "div", "span", "h1", "h2", "h3", "ul", "ol", "li"}
+_FONTS = {"Georgia", "Times New Roman", "Arial", "Calibri", "Courier New", "Verdana"}
+_PAGES = {"a4", "a5", "letter", "legal"}
+_ORIENTATIONS = {"portrait", "landscape"}
+_FONT_SIZE = {"1": "12px", "2": "14px", "3": "16px", "4": "18px", "5": "20px", "6": "24px", "7": "28px"}
+
+
+def _page_value(value: str, allowed: set[str], default: str) -> str:
+    text = (value or "").strip()
+    return text if text in allowed else default
+
+
+def _safe_style(raw: str) -> str:
+    parts: list[str] = []
+    face = re.search(r"""face\s*=\s*['"]([^'"]+)""", raw, re.I)
+    if face and face.group(1).strip() in _FONTS:
+        parts.append(f"font-family:{face.group(1).strip()}")
+    size = re.search(r"""size\s*=\s*['"]?([1-7])""", raw, re.I)
+    if size:
+        parts.append(f"font-size:{_FONT_SIZE[size.group(1)]}")
+    style = re.search(r"""style\s*=\s*['"]([^'"]*)""", raw, re.I)
+    if style:
+        blob = style.group(1)
+        family = re.search(r"font-family\s*:\s*([^;]+)", blob, re.I)
+        if family and family.group(1).strip().strip("'\"") in _FONTS:
+            parts.append(f"font-family:{family.group(1).strip().strip(chr(39) + chr(34))}")
+        pixels = re.search(r"font-size\s*:\s*(12|14|16|18|20|24|28)px", blob, re.I)
+        if pixels:
+            parts.append(f"font-size:{pixels.group(1)}px")
+        align = re.search(r"text-align\s*:\s*(left|center|right|justify)", blob, re.I)
+        if align:
+            parts.append(f"text-align:{align.group(1).lower()}")
+    named = re.search(r"""align\s*=\s*['"](left|center|right|justify)""", raw, re.I)
+    if named:
+        parts.append(f"text-align:{named.group(1).lower()}")
+    kept: dict[str, str] = {}
+    for part in parts:
+        key, value = part.split(":", 1)
+        kept[key] = value
+    return ";".join(f"{key}:{value}" for key, value in kept.items())
 
 
 def _clean_body(raw: str) -> str:
@@ -82,12 +121,17 @@ def _clean_body(raw: str) -> str:
 
     def keep(match: re.Match) -> str:
         tag = match.group(1).lower()
+        if tag == "font":
+            tag = "span"
         if tag not in _KEEP:
             return ""
         if tag == "br":
             return "<br>"
         if match.group(0).startswith("</"):
             return f"</{tag}>"
+        style = _safe_style(match.group(0))
+        if style and tag in {"span", "p", "div", "h1", "h2", "h3"}:
+            return f'<{tag} style="{style}">'
         return f"<{tag}>"
 
     return _TAG.sub(keep, text)[:8000]
@@ -237,12 +281,18 @@ def _slip(form: ServiceForm) -> dict:
     data["body"] = _clean_body(str(data.get("body") or ""))
     data["show_particulars"] = bool(data.get("show_particulars", True))
     data["show_signatory"] = bool(data.get("show_signatory", False))
+    data["page_size"] = _page_value(str(data.get("page_size") or ""), _PAGES, "a4")
+    data["orientation"] = _page_value(str(data.get("orientation") or ""), _ORIENTATIONS, "portrait")
+    data["font_family"] = _page_value(str(data.get("font_family") or ""), _FONTS, "Georgia")
     return data
 
 
 def _stored_slip(slip: SlipIn) -> str:
     data = slip.model_dump()
     data["body"] = _clean_body(data.get("body") or "")
+    data["page_size"] = _page_value(data.get("page_size") or "", _PAGES, "a4")
+    data["orientation"] = _page_value(data.get("orientation") or "", _ORIENTATIONS, "portrait")
+    data["font_family"] = _page_value(data.get("font_family") or "", _FONTS, "Georgia")
     return json.dumps(data)
 
 
@@ -277,6 +327,9 @@ def _layout_public(row: SlipTemplate) -> dict:
         "body": row.body or "",
         "show_particulars": bool(row.show_particulars),
         "show_signatory": bool(row.show_signatory),
+        "page_size": _page_value(row.page_size or "", _PAGES, "a4"),
+        "orientation": _page_value(row.orientation or "", _ORIENTATIONS, "portrait"),
+        "font_family": _page_value(row.font_family or "", _FONTS, "Georgia"),
     }
 
 
@@ -299,6 +352,9 @@ class SlipIn(BaseModel):
     body: str = ""
     show_particulars: bool = True
     show_signatory: bool = False
+    page_size: str = "a4"
+    orientation: str = "portrait"
+    font_family: str = "Georgia"
 
 
 class FormIn(BaseModel):
@@ -354,6 +410,9 @@ class LayoutIn(BaseModel):
     body: str = ""
     show_particulars: bool = True
     show_signatory: bool = True
+    page_size: str = "a4"
+    orientation: str = "portrait"
+    font_family: str = "Georgia"
 
 
 class SubmitIn(BaseModel):
@@ -385,6 +444,9 @@ async def save_layout(
     row.body = _clean_body(body.body)
     row.show_particulars = body.show_particulars
     row.show_signatory = body.show_signatory
+    row.page_size = _page_value(body.page_size, _PAGES, "a4")
+    row.orientation = _page_value(body.orientation, _ORIENTATIONS, "portrait")
+    row.font_family = _page_value(body.font_family, _FONTS, "Georgia")
     await db.commit()
     return _layout_public(row)
 

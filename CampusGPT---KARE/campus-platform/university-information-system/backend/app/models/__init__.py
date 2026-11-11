@@ -719,6 +719,9 @@ class SlipTemplate(Base):
     body: Mapped[str] = mapped_column(Text, default="")
     show_particulars: Mapped[bool] = mapped_column(Boolean, default=True)
     show_signatory: Mapped[bool] = mapped_column(Boolean, default=True)
+    page_size: Mapped[str] = mapped_column(String(16), default="a4")
+    orientation: Mapped[str] = mapped_column(String(16), default="portrait")
+    font_family: Mapped[str] = mapped_column(String(40), default="Georgia")
 
 
 class ServiceForm(Base):

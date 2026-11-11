@@ -49,6 +49,9 @@ const FALLBACK: Layout = {
   signatory_title: "Office of the Registrar",
   show_particulars: true,
   show_signatory: true,
+  page_size: "a4",
+  orientation: "portrait",
+  font_family: "Georgia",
 };
 
 export default function AcknowledgementPage() {
@@ -91,6 +94,9 @@ export default function AcknowledgementPage() {
       signatory_title: formDesign.signatory_title || "",
       show_particulars: formDesign.show_particulars !== false,
       show_signatory: Boolean(formDesign.show_signatory),
+      page_size: formDesign.page_size || layout.page_size,
+      orientation: formDesign.orientation || layout.orientation,
+      font_family: formDesign.font_family || layout.font_family,
     } : {
       document_title: slip?.office?.document_title || layout.document_title,
       body: layout.body || FALLBACK.body,
@@ -109,7 +115,7 @@ export default function AcknowledgementPage() {
         @media print {
           body * { visibility: hidden; }
           .paper-on, .paper-on * { visibility: visible; }
-          .paper-on { position: absolute; left: 0; top: 0; width: 190mm; margin: 0; }
+          .paper-on { position: absolute; left: 0; top: 0; width: auto; margin: 0; }
           .no-print { display: none !important; }
         }
       `}</style>
