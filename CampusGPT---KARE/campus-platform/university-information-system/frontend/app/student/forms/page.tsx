@@ -7,8 +7,8 @@ import AppShell from "@/components/AppShell";
 import FormFill, { FillField } from "@/components/FormFill";
 import { apiFetch } from "@/lib/api";
 
-type Item = { id: number; title: string; instructions: string; response_limit: number; used: number; remaining: number | null };
-type OpenForm = Item & { fields: FillField[]; confirmation?: string; redirect_url?: string; profile?: { label: string; value: string }[]; profile_notice?: string };
+type Item = { id: number; title: string; instructions: string; response_limit: number; used: number; remaining: number | null; allow_edit?: boolean };
+type OpenForm = Item & { fields: FillField[]; confirmation?: string; redirect_url?: string; profile?: { label: string; value: string }[]; profile_notice?: string; mine?: { answers: Record<string, string>; ack_number?: string } };
 
 function StudentForms() {
   const [items, setItems] = useState<Item[]>([]);
@@ -36,7 +36,7 @@ function StudentForms() {
     setSlip("");
     const form = await apiFetch<OpenForm>(`/api/v1/forms/open/${id}`);
     setCurrent(form);
-    setAnswers({});
+    setAnswers(form.mine?.answers || {});
   };
 
   const submit = async (event: FormEvent) => {
@@ -48,7 +48,7 @@ function StudentForms() {
         method: "POST",
         body: JSON.stringify({ answers }),
       });
-      setSlip(result.acknowledgement.number);
+      setSlip(result.acknowledgement.number || "saved");
       setNote(result.confirmation || "");
       setRedirect(result.redirect_url || "");
       setCurrent(null);
@@ -64,7 +64,7 @@ function StudentForms() {
         <h1 className="uis-panel-title">Forms</h1>
         <div className="p-4 space-y-3">
           {err ? <p className="text-sm text-red-600">{err}</p> : null}
-          {slip ? <p className="text-sm text-emerald-700">Submitted. Acknowledgement <Link className="underline" href={`/ack/${slip}`}>{slip}</Link>{note ? ` ${note}` : ""}{redirect ? <> <a className="underline" href={redirect}>Continue</a></> : null}</p> : null}
+          {slip ? <p className="text-sm text-emerald-700">{slip === "saved" ? "Response saved. No acknowledgement slip was requested for this form." : <>Submitted. Acknowledgement <Link className="underline" href={`/ack/${slip}`}>{slip}</Link></>}{note ? ` ${note}` : ""}{redirect ? <> <a className="underline" href={redirect}>Continue</a></> : null}</p> : null}
           {!current ? (
             <ul className="divide-y">
               {items.map((item) => (
@@ -72,12 +72,12 @@ function StudentForms() {
                   <div>
                     <p className="font-medium text-[#0B2A4A]">{item.title}</p>
                     <p className="text-xs text-slate-500">
-                      {item.remaining === null ? "You can submit again" : `${item.remaining} response${item.remaining === 1 ? "" : "s"} left`}
+                      {item.allow_edit && item.used ? "You can update what you filled" : item.remaining === null ? "You can submit again" : `${item.remaining} response${item.remaining === 1 ? "" : "s"} left`}
                       {item.used ? ` · submitted ${item.used}` : ""}
                     </p>
                   </div>
-                  <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={() => open(item.id)} disabled={item.remaining === 0}>
-                    {item.remaining === 0 ? "Already submitted" : "Fill"}
+                  <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={() => open(item.id)} disabled={item.remaining === 0 && !item.allow_edit}>
+                    {item.remaining === 0 && !item.allow_edit ? "Already submitted" : item.used ? "View" : "Fill"}
                   </button>
                 </li>
               ))}
@@ -98,9 +98,16 @@ function StudentForms() {
                   </dl>
                 </div>
               ) : null}
-              <FormFill fields={current.fields} answers={answers} onChange={(key, value) => setAnswers({ ...answers, [key]: value })} uploadPath={`/api/v1/forms/open/${current.id}/file`} />
+              {current.mine && !current.allow_edit ? (
+                <div className="space-y-1 text-sm">
+                  <p className="text-slate-500">What you filled. Editing is closed for this form.</p>
+                  {current.fields.map((field) => <p key={field.key}><span className="text-slate-500">{field.label}: </span>{current.mine?.answers[field.key] || "—"}</p>)}
+                </div>
+              ) : (
+                <FormFill fields={current.fields} answers={answers} onChange={(key, value) => setAnswers({ ...answers, [key]: value })} uploadPath={`/api/v1/forms/open/${current.id}/file`} />
+              )}
               <div className="flex gap-2">
-                <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Submit</button>
+                {current.mine && !current.allow_edit ? null : <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">{current.mine ? "Update response" : "Submit"}</button>}
                 <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={() => setCurrent(null)}>Back</button>
               </div>
             </form>

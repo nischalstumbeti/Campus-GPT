@@ -22,6 +22,8 @@ from app.models import (
     FormCollaborator,
     FormGrant,
     FormResponse,
+    PeopleGroup,
+    PeopleGroupMember,
     ServiceForm,
     SlipTemplate,
     StudentProfile,
@@ -125,6 +127,8 @@ def _public_form(form: ServiceForm, *, used: int = 0, identities: Optional[list[
         "slip": json.loads(form.slip_json or "{}"),
         "public_code": form.public_code or "",
         "collect": _collect(form),
+        "allow_edit": bool(form.allow_edit),
+        "issue_ack": bool(form.issue_ack),
         "share_path": f"/f/{form.public_code}" if form.audience == "open" and form.public_code else f"/student/forms?open={form.id}",
         "created_at": form.created_at.isoformat() if form.created_at else "",
     }
@@ -259,6 +263,8 @@ class FormIn(BaseModel):
     email_body: str = ""
     slip: SlipIn = SlipIn()
     collect: list[str] = DEFAULT_COLLECT
+    allow_edit: bool = False
+    issue_ack: bool = True
     fields: list[FieldIn]
 
 
@@ -275,11 +281,15 @@ class FormPatch(BaseModel):
     email_body: Optional[str] = None
     slip: Optional[SlipIn] = None
     collect: Optional[list[str]] = None
+    allow_edit: Optional[bool] = None
+    issue_ack: Optional[bool] = None
     fields: Optional[list[FieldIn]] = None
 
 
 class ShareIn(BaseModel):
     identities: str = ""
+    group_id: Optional[int] = None
+    can_edit: bool = False
 
 
 class LayoutIn(BaseModel):
@@ -350,6 +360,8 @@ async def create_form(body: FormIn, user: Annotated[User, Depends(Staff)], db: A
         slip_json=json.dumps(body.slip.model_dump()),
         public_code=secrets.token_urlsafe(8),
         collect_json=json.dumps([key for key in body.collect if key in PROFILE_FIELDS]),
+        allow_edit=body.allow_edit,
+        issue_ack=body.issue_ack,
         fields_json=json.dumps(_clean_fields([item.model_dump() for item in body.fields])),
         created_by=user.id,
     )
@@ -388,6 +400,10 @@ async def update_form(
         form.email_subject = body.email_subject.strip()[:160]
     if body.email_body is not None:
         form.email_body = body.email_body.strip()[:4000]
+    if body.allow_edit is not None:
+        form.allow_edit = body.allow_edit
+    if body.issue_ack is not None:
+        form.issue_ack = body.issue_ack
     if body.collect is not None:
         form.collect_json = json.dumps([key for key in body.collect if key in PROFILE_FIELDS])
     if body.slip is not None and _owns(user, form):
@@ -421,6 +437,42 @@ async def delete_form(
     return {"ok": True}
 
 
+async def _users_in_group(db: AsyncSession, group_id: int) -> list[User]:
+    groups = (await db.execute(select(PeopleGroup))).scalars().all()
+    if not any(group.id == group_id for group in groups):
+        raise HTTPException(status_code=404, detail="Group not found")
+    wanted = set()
+
+    def walk(current: int) -> None:
+        wanted.add(current)
+        for group in groups:
+            if group.parent_id == current:
+                walk(group.id)
+
+    walk(group_id)
+    member_ids = (
+        await db.execute(select(PeopleGroupMember.user_id).where(PeopleGroupMember.group_id.in_(wanted)))
+    ).scalars().all()
+    if not member_ids:
+        return []
+    return list(
+        (
+            await db.execute(select(User).where(User.id.in_(member_ids)).options(selectinload(User.student)))
+        ).scalars().all()
+    )
+
+
+@router.get("/forms/directory")
+async def form_directory(_: Annotated[User, Depends(Staff)], db: Annotated[AsyncSession, Depends(get_db)]):
+    groups = (await db.execute(select(PeopleGroup).order_by(PeopleGroup.id))).scalars().all()
+
+    def path(group: PeopleGroup) -> str:
+        parent = next((item for item in groups if item.id == group.parent_id), None)
+        return f"{path(parent)} / {group.name}" if parent else group.name
+
+    return {"items": [{"id": group.id, "path": path(group)} for group in groups]}
+
+
 @router.post("/forms/desk/{form_id}/share")
 async def share_form(
     form_id: int,
@@ -438,22 +490,26 @@ async def share_form(
             tokens.append(token[:64])
     tokens = tokens[:500]
     existing = (await db.execute(select(FormGrant).where(FormGrant.form_id == form.id))).scalars().all()
-    for row in existing:
-        await db.delete(row)
-    await db.flush()
-    seen = set()
+    if body.group_id:
+        for person in await _users_in_group(db, body.group_id):
+            tokens.append(person.student.student_id if person.student else person.username)
+    if not tokens:
+        raise HTTPException(status_code=400, detail="Choose a group that has people, or enter a register number")
+    seen = {row.identity.casefold() for row in existing}
+    fresh = set()
     for token in tokens:
         key = token.casefold()
         if key in seen:
             continue
         seen.add(key)
+        fresh.add(key)
         db.add(FormGrant(form_id=form.id, identity=token))
-    if seen:
+    if fresh:
         matched = (
             await db.execute(
                 select(User)
                 .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
-                .where(or_(func.lower(User.username).in_(list(seen)), func.lower(StudentProfile.student_id).in_(list(seen))))
+                .where(or_(func.lower(User.username).in_(list(fresh)), func.lower(StudentProfile.student_id).in_(list(fresh))))
             )
         ).scalars().all()
         for person in matched:
@@ -467,7 +523,7 @@ async def share_form(
                 )
             )
     await db.commit()
-    return {"ok": True, "count": len(seen)}
+    return {"ok": True, "count": len(fresh)}
 
 
 async def _can_view(db: AsyncSession, user: User, form: ServiceForm) -> bool:
@@ -503,7 +559,13 @@ async def form_responses(
         ).scalars().all()
         people = {row.id: row for row in found}
     grants = (await db.execute(select(FormGrant.identity).where(FormGrant.form_id == form.id))).scalars().all()
+    collaborator = (
+        await db.execute(
+            select(FormCollaborator).where(FormCollaborator.form_id == form.id, FormCollaborator.user_id == user.id)
+        )
+    ).scalar_one_or_none()
     return {
+        "can_edit": _owns(user, form) or bool(collaborator and collaborator.can_edit),
         "form": _public_form(form, identities=list(grants)),
         "items": [
             {
@@ -575,7 +637,8 @@ async def open_forms(user: Annotated[User, Depends(get_current_user)], db: Annot
                 "instructions": form.instructions,
                 "response_limit": form.response_limit,
                 "used": used,
-                "remaining": None if form.response_limit == 0 else max(0, form.response_limit - used),
+                "remaining": None if form.allow_edit else (None if form.response_limit == 0 else max(0, form.response_limit - used)),
+                "allow_edit": bool(form.allow_edit),
             }
         )
     return {"items": visible}
@@ -603,6 +666,19 @@ async def open_form(form_id: int, user: Annotated[User, Depends(get_current_user
         for key in _collect(form)
     ]
     payload["profile_notice"] = "These details come from your signed-in account and will be stored with this response."
+    prior = (
+        await db.execute(
+            select(FormResponse)
+            .where(FormResponse.form_id == form.id, FormResponse.user_id == user.id)
+            .order_by(FormResponse.id.desc())
+        )
+    ).scalars().first()
+    if prior:
+        saved = json.loads(prior.answers_json or "{}")
+        payload["mine"] = {
+            "answers": {key: value for key, value in saved.items() if not str(key).startswith("profile:")},
+            "ack_number": prior.ack_number,
+        }
     return payload
 
 
@@ -636,6 +712,11 @@ def _read_answers(form: ServiceForm, answers: dict) -> tuple[dict, list[str]]:
 
 async def _finish(db, form, response, user, email, identity, lines):
     mode = form.email_mode or "acknowledgement"
+    if not form.issue_ack:
+        if mode == "message" and email:
+            note = form.email_body or "Your response has been recorded."
+            await send_email(email, form.email_subject or form.title, f"<p>{note}</p>", text_body=note)
+        return {"number": "", "title": form.title, "email": email or "", "email_sent": False, "status": "recorded", "link": ""}
     ack = await issue_acknowledgement(
         db,
         user=user,
@@ -673,13 +754,26 @@ async def submit_form(
         await db.scalar(select(func.count()).select_from(FormResponse).where(FormResponse.form_id == form.id, FormResponse.user_id == user.id))
         or 0
     )
-    if form.response_limit and used >= form.response_limit:
+    prior = (
+        await db.execute(
+            select(FormResponse)
+            .where(FormResponse.form_id == form.id, FormResponse.user_id == user.id)
+            .order_by(FormResponse.id.desc())
+        )
+    ).scalars().first()
+    if prior and not form.allow_edit and form.response_limit and used >= form.response_limit:
+        raise HTTPException(status_code=400, detail="You have already used the responses allowed for this service")
+    if not prior and form.response_limit and used >= form.response_limit:
         raise HTTPException(status_code=400, detail="You have already used the responses allowed for this service")
     stored, lines = _read_answers(form, body.answers)
     _attach_profile(form, user, stored, lines)
     identity = user.student.student_id if user.student else user.username
-    response = FormResponse(form_id=form.id, user_id=user.id, answers_json=json.dumps(stored))
-    db.add(response)
+    if prior and form.allow_edit:
+        response = prior
+        response.answers_json = json.dumps(stored)
+    else:
+        response = FormResponse(form_id=form.id, user_id=user.id, answers_json=json.dumps(stored))
+        db.add(response)
     await db.flush()
     ack = await _finish(db, form, response, user, user.email, identity, lines)
     response.ack_number = ack["number"]
@@ -817,28 +911,79 @@ async def add_collaborators(
     if not form or not _owns(user, form):
         raise HTTPException(status_code=404, detail="Form not found")
     keys = [part.strip().casefold() for part in body.identities.replace(",", "\n").splitlines() if part.strip()]
-    if not keys:
-        raise HTTPException(status_code=400, detail="Enter at least one username or register number")
-    people = (
-        await db.execute(
-            select(User)
-            .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
-            .where(or_(func.lower(User.username).in_(keys), func.lower(StudentProfile.student_id).in_(keys)))
+    people = []
+    if body.group_id:
+        people.extend(await _users_in_group(db, body.group_id))
+    if keys:
+        people.extend(
+            (
+                await db.execute(
+                    select(User)
+                    .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+                    .where(or_(func.lower(User.username).in_(keys), func.lower(StudentProfile.student_id).in_(keys)))
+                )
+            ).scalars().all()
         )
-    ).scalars().all()
+    if not people:
+        raise HTTPException(status_code=400, detail="Choose a group or enter a username or register number")
     existing = {
-        row
-        for row in (await db.execute(select(FormCollaborator.user_id).where(FormCollaborator.form_id == form.id))).scalars().all()
+        row.user_id: row
+        for row in (await db.execute(select(FormCollaborator).where(FormCollaborator.form_id == form.id))).scalars().all()
     }
     added = 0
     for person in people:
-        if person.id in existing or person.id == form.created_by:
+        if person.id == form.created_by:
             continue
-        db.add(FormCollaborator(form_id=form.id, user_id=person.id))
-        db.add(AppNotification(user_id=person.id, kind="form", title=form.title, body="You can view and export the responses.", link=f"/forms/results/{form.id}"))
+        if person.id in existing:
+            current = existing[person.id]
+            if current is not None:
+                current.can_edit = body.can_edit or current.can_edit
+            continue
+        db.add(FormCollaborator(form_id=form.id, user_id=person.id, can_edit=body.can_edit))
+        existing[person.id] = None
+        db.add(AppNotification(user_id=person.id, kind="form", title=form.title, body="You can view the responses.", link=f"/forms/results/{form.id}"))
         added += 1
     await db.commit()
     return {"ok": True, "added": added}
+
+
+class EditIn(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict)
+
+
+@router.patch("/forms/desk/{form_id}/responses/{response_id}")
+async def edit_response(
+    form_id: int,
+    response_id: int,
+    body: EditIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    form = (await db.execute(select(ServiceForm).where(ServiceForm.id == form_id))).scalar_one_or_none()
+    if not form or not await _can_view(db, user, form):
+        raise HTTPException(status_code=404, detail="Form not found")
+    collaborator = (
+        await db.execute(select(FormCollaborator).where(FormCollaborator.form_id == form.id, FormCollaborator.user_id == user.id))
+    ).scalar_one_or_none()
+    if not _owns(user, form) and not (collaborator and collaborator.can_edit):
+        raise HTTPException(status_code=403, detail="You can view these responses. Editing was not turned on for you.")
+    response = (
+        await db.execute(select(FormResponse).where(FormResponse.id == response_id, FormResponse.form_id == form.id))
+    ).scalar_one_or_none()
+    if not response:
+        raise HTTPException(status_code=404, detail="Response not found")
+    stored, lines = _read_answers(form, body.answers)
+    owner = None
+    if response.user_id:
+        owner = (await db.execute(select(User).where(User.id == response.user_id).options(selectinload(User.student)))).scalar_one_or_none()
+    if owner:
+        _attach_profile(form, owner, stored, lines)
+    response.answers_json = json.dumps(stored)
+    if form.issue_ack:
+        ack = await _finish(db, form, response, owner, owner.email if owner else response.guest_email, response.guest_email or (owner.username if owner else ""), lines)
+        response.ack_number = ack["number"] or response.ack_number
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/forms/results")

@@ -735,6 +735,8 @@ class ServiceForm(Base):
     slip_json: Mapped[str] = mapped_column(Text, default="{}")
     public_code: Mapped[str] = mapped_column(String(32), default="", index=True)
     collect_json: Mapped[str] = mapped_column(Text, default="[]")
+    allow_edit: Mapped[bool] = mapped_column(Boolean, default=False)
+    issue_ack: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -759,6 +761,7 @@ class FormCollaborator(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     form_id: Mapped[int] = mapped_column(ForeignKey("service_forms.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    can_edit: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class FormResponse(Base):

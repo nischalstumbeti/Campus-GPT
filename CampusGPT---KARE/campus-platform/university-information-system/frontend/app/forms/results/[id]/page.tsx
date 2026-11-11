@@ -23,11 +23,13 @@ export default function FormResultsPage() {
   const [view, setView] = useState<"summary" | "individual">("summary");
   const [groupBy, setGroupBy] = useState("");
   const [person, setPerson] = useState(0);
+  const [canEdit, setCanEdit] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
   const [err, setErr] = useState("");
 
   useEffect(() => {
     if (!id) return;
-    apiFetch<{ form: { title: string; public_code?: string; share_path?: string; fields: Field[] }; items: Row[]; charts: Chart[] }>(`/api/v1/forms/desk/${id}/responses`)
+    apiFetch<{ can_edit?: boolean; form: { title: string; public_code?: string; share_path?: string; fields: Field[] }; items: Row[]; charts: Chart[] }>(`/api/v1/forms/desk/${id}/responses`)
       .then((data) => {
         setTitle(data.form.title);
         setCode(data.form.public_code || "");
@@ -35,6 +37,7 @@ export default function FormResultsPage() {
         setFields(data.form.fields || []);
         setRows(data.items || []);
         setCharts(data.charts || []);
+        setCanEdit(Boolean(data.can_edit));
       })
       .catch((e) => setErr(e.message));
   }, [id]);
@@ -68,7 +71,7 @@ export default function FormResultsPage() {
           {sharePath ? (
             <p className="text-sm">
               Share link{" "}
-              <button type="button" className="underline" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${sharePath}`)}>{sharePath}</button>
+              <button type="button" className="underline break-all text-left" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${sharePath}`)}>{`${window.location.origin}${sharePath}`}</button>
             </p>
           ) : code ? <p className="text-sm">Open link: <Link className="underline" href={`/f/${code}`}>{`/f/${code}`}</Link></p> : null}
           <div className="flex gap-2">
@@ -135,12 +138,23 @@ export default function FormResultsPage() {
                 <p>{person + 1} of {visible.length}</p>
               </div>
               {fields.map((field) => (
-                <p key={field.key}><span className="text-slate-500">{field.label}: </span>{visible[person].answers[field.key] || "—"}</p>
+                canEdit ? (
+                  <label key={field.key} className="block text-xs text-slate-500">{field.label}
+                    <input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={draft[field.key] ?? visible[person].answers[field.key] ?? ""} onChange={(e) => setDraft({ ...draft, [field.key]: e.target.value })} />
+                  </label>
+                ) : <p key={field.key}><span className="text-slate-500">{field.label}: </span>{visible[person].answers[field.key] || "—"}</p>
               ))}
               {visible[person].ack_number ? <Link className="underline" href={`/ack/${visible[person].ack_number}`}>{visible[person].ack_number}</Link> : null}
               <div className="flex gap-2">
-                <button type="button" className="px-3 py-1 rounded border" onClick={() => setPerson((value) => Math.max(0, value - 1))}>Previous</button>
-                <button type="button" className="px-3 py-1 rounded border" onClick={() => setPerson((value) => Math.min(visible.length - 1, value + 1))}>Next</button>
+                {canEdit ? <button type="button" className="px-3 py-1 rounded bg-[#0B2A4A] text-white" onClick={async () => {
+                  const row = visible[person];
+                  const answers = { ...row.answers, ...draft };
+                  await apiFetch(`/api/v1/forms/desk/${id}/responses/${row.id}`, { method: "PATCH", body: JSON.stringify({ answers }) });
+                  setRows((current) => current.map((item) => item.id === row.id ? { ...item, answers } : item));
+                  setDraft({});
+                }}>Save correction</button> : null}
+                <button type="button" className="px-3 py-1 rounded border" onClick={() => { setDraft({}); setPerson((value) => Math.max(0, value - 1)); }}>Previous</button>
+                <button type="button" className="px-3 py-1 rounded border" onClick={() => { setDraft({}); setPerson((value) => Math.min(visible.length - 1, value + 1)); }}>Next</button>
               </div>
             </article>
           ) : null}

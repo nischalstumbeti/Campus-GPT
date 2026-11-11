@@ -40,7 +40,6 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [preview, setPreview] = useState(false);
-  const [collaborators, setCollaborators] = useState("");
   const [emailMode, setEmailMode] = useState("acknowledgement");
   const [emailBody, setEmailBody] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -49,6 +48,12 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [slipSign, setSlipSign] = useState("");
   const [collect, setCollect] = useState<string[]>(["name", "email", "register_or_employee"]);
   const [sharePath, setSharePath] = useState("");
+  const [issueAck, setIssueAck] = useState(true);
+  const [allowEdit, setAllowEdit] = useState(false);
+  const [groups, setGroups] = useState<{ id: number; path: string }[]>([]);
+  const [pickedGroup, setPickedGroup] = useState("");
+  const [shareAs, setShareAs] = useState("respond");
+  const [grantEdit, setGrantEdit] = useState(false);
 
   const load = () => {
     apiFetch<{ items: Service[] }>("/api/v1/forms")
@@ -61,6 +66,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     if (manageLayout) {
       apiFetch<Layout>(`/api/v1/slips/layout?kind=${layoutKind}`).then(setLayout).catch(() => setLayout(null));
     }
+    apiFetch<{ items: { id: number; path: string }[] }>("/api/v1/forms/directory").then((data) => setGroups(data.items || [])).catch(() => setGroups([]));
   }, [manageLayout, layoutKind]);
 
   const create = async (event: FormEvent) => {
@@ -76,6 +82,8 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
           response_limit: Number(limit),
           is_open: false,
           collect: audience === "open" ? [] : collect,
+          allow_edit: allowEdit,
+          issue_ack: issueAck,
           fields: fields.filter((field) => field.label.trim()),
         }),
       });
@@ -95,7 +103,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     setSelected(id);
     setErr("");
     const data = await apiFetch<{ form: { identities: string[] }; items: Answer[] }>(`/api/v1/forms/desk/${id}/responses`);
-    setIdentities((data.form.identities || []).join("\n"));
+    setIdentities("");
     setAnswers(data.items || []);
     const form = data.form as { email_mode?: string; email_body?: string; confirmation?: string; redirect_url?: string; slip?: { document_title?: string; signatory?: string } };
     setEmailMode(form.email_mode || "acknowledgement");
@@ -104,8 +112,10 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     setRedirectUrl(form.redirect_url || "");
     setSlipTitle(form.slip?.document_title || "FORM ACKNOWLEDGEMENT");
     setSlipSign(form.slip?.signatory || "");
-    const shared = data.form as { share_path?: string; is_open?: boolean };
+    const shared = data.form as { share_path?: string; is_open?: boolean; allow_edit?: boolean; issue_ack?: boolean };
     setSharePath(shared.is_open ? shared.share_path || "" : "");
+    setAllowEdit(Boolean(shared.allow_edit));
+    setIssueAck(shared.issue_ack !== false);
   };
 
   const share = async () => {
@@ -114,9 +124,9 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     try {
       const result = await apiFetch<{ count: number }>(`/api/v1/forms/desk/${selected}/share`, {
         method: "POST",
-        body: JSON.stringify({ identities }),
+        body: JSON.stringify({ identities, group_id: pickedGroup ? Number(pickedGroup) : null }),
       });
-      setMsg(`Shared with ${result.count} identities. Only a signed-in match can open it.`);
+      setMsg(`Added ${result.count} ${result.count === 1 ? "person" : "people"}. A signed-in match can open the form.`);
       load();
     } catch (error) {
       setErr(error instanceof Error ? error.message : "Could not share");
@@ -177,6 +187,14 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
                 ))}
               </div>
             </div>
+            <label className="text-sm flex items-center gap-2 md:col-span-2">
+              <input type="checkbox" checked={issueAck} onChange={(e) => setIssueAck(e.target.checked)} />
+              Generate an acknowledgement number and slip
+            </label>
+            <label className="text-sm flex items-center gap-2 md:col-span-2">
+              <input type="checkbox" checked={allowEdit} onChange={(e) => setAllowEdit(e.target.checked)} />
+              Let the person who filled this form edit their response
+            </label>
             <label className="text-xs text-slate-500">Responses allowed for one identity (0 = no limit)
               <input type="number" min={0} max={20} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={limit} onChange={(e) => setLimit(e.target.value)} />
             </label>
@@ -248,14 +266,41 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
         </table>
         {selected ? (
           <div className="p-4 border-t space-y-3">
-            <label className="block text-xs text-slate-500">Register numbers or usernames, one on each line
-              <textarea className="mt-1 w-full border rounded px-2 py-1 text-sm" rows={4} value={identities} onChange={(e) => setIdentities(e.target.value)} />
-            </label>
-            <p className="text-xs text-slate-500">Named identities must sign in. An open form uses its public link instead.</p>
+            <div className="grid md:grid-cols-2 gap-2">
+              <label className="text-xs text-slate-500">Add from a group, including its subgroups
+                <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={pickedGroup} onChange={(e) => setPickedGroup(e.target.value)}>
+                  <option value="">Choose a group</option>
+                  {groups.map((group) => <option key={group.id} value={group.id}>{group.path}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-slate-500">Or one person
+                <input className="mt-1 w-full border rounded px-2 py-1 text-sm" placeholder="Register number or username" value={identities} onChange={(e) => setIdentities(e.target.value)} />
+              </label>
+              <label className="text-xs text-slate-500">Add them as
+                <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={shareAs} onChange={(e) => setShareAs(e.target.value)}>
+                  <option value="respond">People who can fill the form</option>
+                  <option value="collaborate">Collaborators who can view responses</option>
+                </select>
+              </label>
+              {shareAs === "collaborate" ? (
+                <label className="text-sm flex items-center gap-2">
+                  <input type="checkbox" checked={grantEdit} onChange={(e) => setGrantEdit(e.target.checked)} />
+                  They may edit a response
+                </label>
+              ) : null}
+            </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={share}>Save who can respond</button>
+              <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={async () => {
+                const body = { identities, group_id: pickedGroup ? Number(pickedGroup) : null, can_edit: grantEdit };
+                if (shareAs === "collaborate") {
+                  const result = await apiFetch<{ added: number }>(`/api/v1/forms/desk/${selected}/collaborators`, { method: "POST", body: JSON.stringify(body) });
+                  setMsg(`${result.added} collaborator${result.added === 1 ? "" : "s"} added${grantEdit ? ", with permission to edit responses" : ""}.`);
+                } else {
+                  await share();
+                }
+              }}>Add</button>
               <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
-                await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ is_open: true, audience, collect: audience === "open" ? [] : collect }) });
+                await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ is_open: true, audience, collect: audience === "open" ? [] : collect, allow_edit: allowEdit, issue_ack: issueAck }) });
                 setMsg("Published. Copy the link below and share it.");
                 load();
                 if (selected) openResponses(selected);
@@ -265,18 +310,11 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
             {sharePath ? (
               <p className="text-sm">
                 Share link{" "}
-                <button type="button" className="underline text-[#0B2A4A]" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${sharePath}`)}>
-                  {sharePath}
+                <button type="button" className="underline text-[#0B2A4A] break-all text-left" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${sharePath}`)}>
+                  {`${window.location.origin}${sharePath}`}
                 </button>
               </p>
             ) : null}
-            <label className="block text-xs text-slate-500">Collaborators who can see responses, not edit the slip
-              <textarea className="mt-1 w-full border rounded px-2 py-1 text-sm" rows={2} value={collaborators} onChange={(e) => setCollaborators(e.target.value)} />
-            </label>
-            <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
-              const result = await apiFetch<{ added: number }>(`/api/v1/forms/desk/${selected}/collaborators`, { method: "POST", body: JSON.stringify({ identities: collaborators }) });
-              setMsg(`${result.added} collaborator${result.added === 1 ? "" : "s"} can now export the responses.`);
-            }}>Add collaborators</button>
             <div className="grid md:grid-cols-2 gap-2">
               <label className="text-xs text-slate-500">After submit, email
                 <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={emailMode} onChange={(e) => setEmailMode(e.target.value)}>

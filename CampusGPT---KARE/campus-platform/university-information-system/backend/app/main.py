@@ -342,10 +342,15 @@ async def _ensure_form_extras(conn):
             "slip_json": "ALTER TABLE service_forms ADD COLUMN slip_json TEXT DEFAULT '{}'",
             "public_code": "ALTER TABLE service_forms ADD COLUMN public_code VARCHAR(32) DEFAULT ''",
             "collect_json": "ALTER TABLE service_forms ADD COLUMN collect_json TEXT DEFAULT '[]'",
+            "allow_edit": "ALTER TABLE service_forms ADD COLUMN allow_edit BOOLEAN DEFAULT 0",
+            "issue_ack": "ALTER TABLE service_forms ADD COLUMN issue_ack BOOLEAN DEFAULT 1",
         }
         for column, statement in alters.items():
             if column not in forms:
                 await conn.execute(text(statement))
+    collaborators = await conn.run_sync(lambda sync_conn: _info(sync_conn, "form_collaborators"))
+    if collaborators and "can_edit" not in collaborators:
+        await conn.execute(text("ALTER TABLE form_collaborators ADD COLUMN can_edit BOOLEAN DEFAULT 0"))
     answers = await conn.run_sync(lambda sync_conn: _info(sync_conn, "form_responses"))
     if not answers:
         return
