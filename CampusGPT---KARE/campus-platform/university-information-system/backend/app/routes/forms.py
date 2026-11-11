@@ -61,8 +61,8 @@ PROFILE_FIELDS = {
 DEFAULT_COLLECT = ["name", "email", "register_or_employee"]
 LAYOUTS = {
     "general": ("ACKNOWLEDGEMENT", "Registrar", "Office of the Registrar"),
-    "form": ("FORM ACKNOWLEDGEMENT", "Dean", "Office of the Dean"),
-    "registration": ("REGISTRATION ACKNOWLEDGEMENT", "Controller of Examinations", "Office of the Controller of Examinations"),
+    "form": ("APPLICATION CONFIRMATION", "", ""),
+    "registration": ("COURSE REGISTRATION", "Dean, Academic Affairs", "Office of the Dean (Academic)"),
 }
 
 
@@ -804,11 +804,24 @@ async def response_sheet(number: str, user: Annotated[User, Depends(get_current_
         "name": response.guest_name or (person.full_name if person else ""),
         "status": ack.status,
         "slip": _slip(form) if form else {},
+        "photo_url": (person.photo_url if person and person.photo_url else "") or (person.student.photo_url if person and person.student and person.student.photo_url else ""),
+        "profile": [
+            {"label": PROFILE_FIELDS[key.split(":", 1)[1]], "value": value}
+            for key, value in answers.items()
+            if key.startswith("profile:") and key.split(":", 1)[1] in PROFILE_FIELDS
+        ],
+        "answers": [
+            {"label": field["label"], "value": "File attached" if field.get("type") == "file" and answers.get(field["key"]) else answers.get(field["key"], "")}
+            for field in fields
+        ],
         "fields": [
             {"label": PROFILE_FIELDS[key.split(":", 1)[1]], "value": value}
             for key, value in answers.items()
             if key.startswith("profile:") and key.split(":", 1)[1] in PROFILE_FIELDS
-        ] + [{"label": field["label"], "value": answers.get(field["key"], "")} for field in fields],
+        ] + [
+            {"label": field["label"], "value": "File attached" if field.get("type") == "file" and answers.get(field["key"]) else answers.get(field["key"], "")}
+            for field in fields
+        ],
     }
 
 

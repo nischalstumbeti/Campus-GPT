@@ -36,7 +36,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [identities, setIdentities] = useState("");
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [layout, setLayout] = useState<Layout | null>(null);
-  const [layoutKind, setLayoutKind] = useState("form");
+  const layoutKind = "general";
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [preview, setPreview] = useState(false);
@@ -44,8 +44,6 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [emailBody, setEmailBody] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("");
-  const [slipTitle, setSlipTitle] = useState("FORM ACKNOWLEDGEMENT");
-  const [slipSign, setSlipSign] = useState("");
   const [collect, setCollect] = useState<string[]>(["name", "email", "register_or_employee"]);
   const [sharePath, setSharePath] = useState("");
   const [issueAck, setIssueAck] = useState(true);
@@ -105,13 +103,11 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
     const data = await apiFetch<{ form: { identities: string[] }; items: Answer[] }>(`/api/v1/forms/desk/${id}/responses`);
     setIdentities("");
     setAnswers(data.items || []);
-    const form = data.form as { email_mode?: string; email_body?: string; confirmation?: string; redirect_url?: string; slip?: { document_title?: string; signatory?: string } };
+    const form = data.form as { email_mode?: string; email_body?: string; confirmation?: string; redirect_url?: string };
     setEmailMode(form.email_mode || "acknowledgement");
     setEmailBody(form.email_body || "");
     setConfirmation(form.confirmation || "");
     setRedirectUrl(form.redirect_url || "");
-    setSlipTitle(form.slip?.document_title || "FORM ACKNOWLEDGEMENT");
-    setSlipSign(form.slip?.signatory || "");
     const shared = data.form as { share_path?: string; is_open?: boolean; allow_edit?: boolean; issue_ack?: boolean };
     setSharePath(shared.is_open ? shared.share_path || "" : "");
     setAllowEdit(Boolean(shared.allow_edit));
@@ -326,11 +322,10 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
               <label className="text-xs text-slate-500">Message text<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} /></label>
               <label className="text-xs text-slate-500">On-screen confirmation<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>
               <label className="text-xs text-slate-500">Destination link<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={redirectUrl} onChange={(e) => setRedirectUrl(e.target.value)} /></label>
-              <label className="text-xs text-slate-500">Slip title<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={slipTitle} onChange={(e) => setSlipTitle(e.target.value)} /></label>
-              <label className="text-xs text-slate-500">Slip signatory<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={slipSign} onChange={(e) => setSlipSign(e.target.value)} /></label>
+              <p className="text-xs text-slate-500 md:col-span-2">The confirmation is printed like an application page for this form only. It is not signed by a dean or any other office.</p>
             </div>
             <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
-              await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ email_mode: emailMode, email_body: emailBody, confirmation, redirect_url: redirectUrl, slip: { document_title: slipTitle, signatory: slipSign, institution: "Kalasalingam Academy of Research and Education", subtitle: "", footer: "Keep this acknowledgement number.", signatory_title: "" } }) });
+              await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ email_mode: emailMode, email_body: emailBody, confirmation, redirect_url: redirectUrl, slip: { document_title: "APPLICATION CONFIRMATION", signatory: "", institution: "Kalasalingam Academy of Research and Education", subtitle: "", footer: "This confirmation is for this form only.", signatory_title: "" } }) });
               setMsg("Acknowledgement design and email saved for this form.");
             }}>Save slip and email</button>
             <table className="w-full text-sm">
@@ -351,20 +346,11 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
       </section>
       {manageLayout && layout ? (
         <section className="uis-panel">
-          <h2 className="uis-panel-title">Acknowledgement layouts</h2>
+          <h2 className="uis-panel-title">Service acknowledgement</h2>
+          <p className="px-4 pt-3 text-sm text-slate-600">A form is printed as an application confirmation and is not signed. A campus service is signed by the office that owns it: the Dean (Academic) for registration and withdrawal, the Controller of Examinations for examinations, the Finance Officer for fees, and the Registrar for other records.</p>
           <form onSubmit={saveLayout} className="p-4 grid md:grid-cols-2 gap-2">
-            <label className="text-xs text-slate-500 md:col-span-2">Which slip
-              <select className="mt-1 block border rounded px-2 py-1 text-sm" value={layoutKind} onChange={(e) => setLayoutKind(e.target.value)}>
-                <option value="form">Form acknowledgement</option>
-                <option value="registration">Registration acknowledgement</option>
-                <option value="general">Other acknowledgement</option>
-              </select>
-            </label>
             <label className="text-xs text-slate-500">Institution<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.institution} onChange={(e) => setLayout({ ...layout, institution: e.target.value })} /></label>
-            <label className="text-xs text-slate-500">Document title<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.document_title} onChange={(e) => setLayout({ ...layout, document_title: e.target.value })} /></label>
             <label className="text-xs text-slate-500">Subtitle<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.subtitle} onChange={(e) => setLayout({ ...layout, subtitle: e.target.value })} /></label>
-            <label className="text-xs text-slate-500">Signatory<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.signatory} onChange={(e) => setLayout({ ...layout, signatory: e.target.value })} /></label>
-            <label className="text-xs text-slate-500">Signatory office<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.signatory_title} onChange={(e) => setLayout({ ...layout, signatory_title: e.target.value })} /></label>
             <label className="text-xs text-slate-500 md:col-span-2">Footer<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={layout.footer} onChange={(e) => setLayout({ ...layout, footer: e.target.value })} /></label>
             <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Save layout</button>
           </form>

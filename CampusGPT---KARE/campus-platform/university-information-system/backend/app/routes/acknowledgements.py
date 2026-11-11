@@ -13,15 +13,42 @@ from app.security.auth import get_current_user
 router = APIRouter(prefix="/api/v1/acknowledgements", tags=["acknowledgements"])
 
 _ADMIN = {"university_admin", "admin", "super_admin", "developer", "operator", "coe", "director"}
-_REGISTRATION = {"registration", "withdrawal", "revaluation", "arrear", "backlog", "makeup"}
+
+_COE = ("Controller of Examinations", "Office of the Controller of Examinations")
+_DEAN_ACAD = ("Dean, Academic Affairs", "Office of the Dean (Academic)")
+_REGISTRAR = ("Registrar", "Office of the Registrar")
+_FINANCE = ("Finance Officer", "Office of the Finance Officer")
+
+# The office is the one that actually owns the service. A form is not in this map.
+_OFFICES = {
+    "registration": ("COURSE REGISTRATION", *_DEAN_ACAD, "Course registration is recorded by the Office of the Dean (Academic)."),
+    "withdrawal": ("COURSE WITHDRAWAL", *_DEAN_ACAD, "A course withdrawal is accepted by the Office of the Dean (Academic)."),
+    "revaluation": ("REVALUATION APPLICATION", *_COE, "Revaluation of an answer script is conducted by the Controller of Examinations."),
+    "arrear": ("ARREAR APPLICATION", *_COE, "An arrear examination is conducted by the Controller of Examinations."),
+    "backlog": ("BACKLOG APPLICATION", *_COE, "A backlog examination is conducted by the Controller of Examinations."),
+    "makeup": ("MAKE-UP APPLICATION", *_COE, "A make-up examination is conducted by the Controller of Examinations."),
+    "payment": ("FEE RECEIPT", *_FINANCE, "Fee collection is recorded by the Office of the Finance Officer."),
+    "payroll": ("PAYSLIP", *_FINANCE, "Pay is recorded by the Office of the Finance Officer."),
+    "complaint": ("COMPLAINT RECEIPT", "Dean, Student Affairs", "Office of the Dean (Student Affairs)", "A complaint is received by the Office of the Dean (Student Affairs)."),
+    "delete-exam": ("EXAMINATION RECORD", *_COE, "An examination record is maintained by the Controller of Examinations."),
+    "delete-user": ("ACCOUNT RECORD", *_REGISTRAR, "An account change is confirmed by the Office of the Registrar."),
+    "delete-course": ("COURSE RECORD", *_REGISTRAR, "A course record is confirmed by the Office of the Registrar."),
+    "delete-section": ("SECTION RECORD", *_REGISTRAR, "A class section record is confirmed by the Office of the Registrar."),
+    "delete-timetable": ("TIMETABLE RECORD", *_REGISTRAR, "The timetable is confirmed by the Office of the Registrar."),
+    "delete-office-hours": ("OFFICE HOURS RECORD", *_DEAN_ACAD, "Faculty office hours are recorded by the Office of the Dean (Academic)."),
+    "general": ("ACKNOWLEDGEMENT", *_REGISTRAR, "This record is confirmed by the Office of the Registrar."),
+}
+
+
+def _office(kind: str) -> dict:
+    title, signatory, office, reason = _OFFICES.get(kind or "", _OFFICES["general"])
+    return {"document_title": title, "signatory": signatory, "signatory_title": office, "reason": reason}
 
 
 def _layout_kind(kind: str) -> str:
     if kind == "form":
         return "form"
-    if kind in _REGISTRATION:
-        return "registration"
-    return "general"
+    return "service"
 
 
 def _public(row: Acknowledgement) -> dict:
@@ -34,6 +61,7 @@ def _public(row: Acknowledgement) -> dict:
         "email_sent": row.email_sent,
         "status": row.status or "",
         "layout_kind": _layout_kind(row.kind or ""),
+        "office": None if (row.kind or "") == "form" else _office(row.kind or ""),
         "created_at": row.created_at.isoformat() if row.created_at else "",
     }
 
