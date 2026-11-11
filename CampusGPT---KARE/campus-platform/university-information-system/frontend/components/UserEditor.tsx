@@ -129,7 +129,7 @@ export default function UserEditor({ userId, roles, busy, onClose, onSaved, onEr
         ) : (
           <>
             <p className="text-sm text-slate-500">
-              {detail.full_name} ({detail.username}). The same photo is used on the student page, hall ticket, hostel, and directory.
+              {detail.full_name} ({detail.username}). Upload a JPG, PNG, or WebP. Faculty and staff photos show in the directory. Student photos also show on the profile, hall ticket, and hostel.
             </p>
             <div className="flex items-center gap-3">
               {preview ? (

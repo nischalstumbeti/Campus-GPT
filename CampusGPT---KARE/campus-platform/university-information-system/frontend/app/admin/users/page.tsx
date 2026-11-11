@@ -13,6 +13,7 @@ type UserRow = {
   role: string;
   department_code: string | null;
   is_active: boolean;
+  has_photo?: boolean;
   created_at: string | null;
 };
 
@@ -561,6 +562,7 @@ export default function AdminUsersPage() {
         <table className="w-full text-sm">
           <thead className="bg-[#F4F6F9] text-xs text-slate-500 text-left">
             <tr>
+              <th className="px-3 py-2">Photo</th>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Role</th>
@@ -573,6 +575,7 @@ export default function AdminUsersPage() {
           <tbody>
             {items.map((u) => (
               <tr key={u.id} className="border-t">
+                <td className="px-3 py-2 text-xs text-slate-500">{u.has_photo ? "Added" : "None"}</td>
                 <td className="px-3 py-2 font-medium">{u.username}</td>
                 <td className="px-3 py-2">
                   <p>{u.full_name}</p>

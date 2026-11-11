@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 
@@ -58,7 +59,8 @@ export default function AdminHallTicketPage() {
         <h1 className="uis-panel-title">Hall ticket</h1>
         <div className="p-4 space-y-3">
           <p className="text-sm text-slate-600">
-            Design the hall ticket here. Students see their own examination schedule, and they can open the PDF only while this is enabled.
+            Design the hall ticket here. Students see their own examination schedule, and they can open the PDF only while this is enabled. Change a date, time, or venue from{" "}
+            <Link href="/admin/records?tab=exams" className="font-medium text-[#0B2A4A] underline">Timetable & exams</Link>.
           </p>
           {err ? <p className="text-sm text-red-600">{err}</p> : null}
           {msg ? <p className="text-sm text-brand">{msg}</p> : null}

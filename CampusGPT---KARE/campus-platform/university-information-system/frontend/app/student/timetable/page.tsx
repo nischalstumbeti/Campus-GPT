@@ -52,11 +52,15 @@ function courseColor(code: string) {
 export default function TimetablePage() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [studentId, setStudentId] = useState("");
+  const [section, setSection] = useState("");
+  const [semester, setSemester] = useState<number | null>(null);
 
   useEffect(() => {
-    apiFetch<{ student_id?: string; slots: Slot[] }>("/api/v1/student/timetable").then((d) => {
+    apiFetch<{ student_id?: string; section?: string; semester?: number; slots: Slot[] }>("/api/v1/student/timetable").then((d) => {
       setSlots(d.slots || []);
       setStudentId(d.student_id || "");
+      setSection(d.section || "");
+      setSemester(d.semester ?? null);
     });
   }, []);
 
@@ -68,7 +72,10 @@ export default function TimetablePage() {
     <AppShell>
       <h1 className="text-xl font-bold text-brand mb-1">Class timetable</h1>
       <p className="text-sm text-slate-500 mb-4">
-        {studentId ? `Roll ${studentId} · CSE 5th sem Section A` : "Loading…"} — same records as Campus-GPT
+        {studentId
+          ? `Roll ${studentId}${semester ? ` · Semester ${semester}` : ""}${section ? ` · Section ${section}` : ""}`
+          : "Loading…"}{" "}
+        — times and rooms are the ones saved by the administrator
       </p>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-full text-sm">

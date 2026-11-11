@@ -48,6 +48,7 @@ async def directory(
             "name": row.full_name,
             "email": row.email,
             "role": ROLE_LABELS.get(row.role, row.role.replace("_", " ").title()),
+            "photo_url": row.photo_url or "",
         }
         if not student_view:
             department = ""

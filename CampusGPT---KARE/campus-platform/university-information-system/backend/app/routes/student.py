@@ -284,7 +284,7 @@ async def timetable(user: Annotated[User, Depends(require_roles("student"))], db
     result = await db.execute(select(Enrollment.offering_id).where(Enrollment.student_id == s.id))
     offering_ids = [r[0] for r in result.all()]
     if not offering_ids:
-        return {"student_id": s.student_id, "slots": []}
+        return {"student_id": s.student_id, "section": s.section, "semester": s.semester, "batch": s.batch, "slots": []}
     slots_q = await db.execute(
         select(TimetableSlot)
         .where(TimetableSlot.offering_id.in_(offering_ids))
@@ -298,6 +298,9 @@ async def timetable(user: Annotated[User, Depends(require_roles("student"))], db
     slots = slots_q.scalars().all()
     return {
         "student_id": s.student_id,
+        "section": s.section,
+        "semester": s.semester,
+        "batch": s.batch,
         "slots": [serialize_timetable_slot(sl) for sl in slots],
     }
 

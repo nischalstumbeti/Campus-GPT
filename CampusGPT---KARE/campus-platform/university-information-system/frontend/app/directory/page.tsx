@@ -66,7 +66,7 @@ export default function DirectoryPage() {
           <table className="w-full text-sm">
             <thead className="uis-table-head text-left">
               <tr>
-                {limited ? null : <th className="px-3 py-2">Photo</th>}
+                <th className="px-3 py-2">Photo</th>
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Official</th>
                 <th className="px-3 py-2">Email</th>
@@ -83,17 +83,15 @@ export default function DirectoryPage() {
             <tbody>
               {rows.map((person) => (
                 <tr key={person.email} className="border-t border-slate-100">
-                  {limited ? null : (
-                    <td className="px-3 py-2">
-                      {person.photo_url ? (
-                        <img src={person.photo_url} alt="" className="h-12 w-10 object-cover border border-slate-300 bg-slate-100" />
-                      ) : (
-                        <div className="h-12 w-10 border border-slate-300 bg-slate-100 text-brand text-sm font-semibold flex items-center justify-center">
-                          {initials(person.name)}
-                        </div>
-                      )}
-                    </td>
-                  )}
+                  <td className="px-3 py-2">
+                    {person.photo_url ? (
+                      <img src={person.photo_url} alt="" className="h-12 w-10 object-cover border border-slate-300 bg-slate-100" />
+                    ) : (
+                      <div className="h-12 w-10 border border-slate-300 bg-slate-100 text-brand text-sm font-semibold flex items-center justify-center">
+                        {initials(person.name)}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 font-medium">{person.name}</td>
                   <td className="px-3 py-2">{person.role}</td>
                   <td className="px-3 py-2">
@@ -113,7 +111,7 @@ export default function DirectoryPage() {
               ))}
               {!rows.length && !err ? (
                 <tr>
-                  <td colSpan={limited ? 3 : 8} className="px-3 py-4 text-slate-500">
+                  <td colSpan={limited ? 4 : 8} className="px-3 py-4 text-slate-500">
                     No officials match this search.
                   </td>
                 </tr>

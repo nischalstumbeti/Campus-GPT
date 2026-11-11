@@ -350,7 +350,7 @@ const ADMIN: NavItem[] = [
   { href: "/admin/cms", label: "Admin CMS", icon: "folder" },
   { href: "/admin/fees", label: "Fee deadlines", icon: "wallet" },
   { href: "/admin/allocation", label: "Course allocation", icon: "clipboard" },
-  { href: process.env.NEXT_PUBLIC_TIMETABLE_URL ?? "http://localhost:5173", label: "Timetable Allotment System", icon: "calendar" },
+  { href: "/admin/records", label: "Timetable & exams", icon: "calendar" },
   { href: "/admin/marks", label: "Enter marks", icon: "chart" },
   { href: "/admin/attendance", label: "Enter attendance", icon: "check" },
   { href: "/admin/applications", label: "Exam applications", icon: "clipboard" },

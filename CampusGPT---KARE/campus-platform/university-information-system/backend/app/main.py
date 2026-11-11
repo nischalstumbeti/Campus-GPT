@@ -61,6 +61,7 @@ from app.routes import (
     integrations,
     marquee,
     messages,
+    records,
     student,
 )
 
@@ -454,6 +455,7 @@ app.include_router(messages.router)
 app.include_router(marquee.router)
 app.include_router(branding.router)
 app.include_router(admin.router)
+app.include_router(records.router)
 app.include_router(integrations.router)
 app.include_router(exam_applications.router)
 app.include_router(hall_ticket.router)
