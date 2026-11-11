@@ -29,6 +29,47 @@ const EMPTY: Design = {
   require_subject: true,
 };
 
+function WaiverForm() {
+  const [studentId, setStudentId] = useState("");
+  const [reason, setReason] = useState("");
+  const [source, setSource] = useState("management");
+  const [note, setNote] = useState("");
+
+  const saveWaiver = async () => {
+    setNote("");
+    try {
+      await apiFetch("/api/v1/hall-ticket/waivers", {
+        method: "POST",
+        body: JSON.stringify({ student_id: studentId.trim(), reason, source, active: true }),
+      });
+      setNote(`Hall ticket enabled for ${studentId.trim()} despite the attendance rule.`);
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : "Could not save the recommendation");
+    }
+  };
+
+  return (
+    <div className="border rounded-lg p-3 space-y-2">
+      <p className="text-sm font-medium text-[#0B2A4A]">Attendance exception</p>
+      <p className="text-xs text-slate-500">Use this when faculty or management recommends a hall ticket for a student who is short of attendance.</p>
+      <label className="block text-xs text-slate-500">Register number
+        <input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={studentId} onChange={(e) => setStudentId(e.target.value)} />
+      </label>
+      <label className="block text-xs text-slate-500">Reason
+        <input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={reason} onChange={(e) => setReason(e.target.value)} />
+      </label>
+      <label className="block text-xs text-slate-500">Recommended by
+        <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={source} onChange={(e) => setSource(e.target.value)}>
+          <option value="management">Management</option>
+          <option value="faculty">Faculty</option>
+        </select>
+      </label>
+      <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={saveWaiver}>Enable hall ticket</button>
+      {note ? <p className="text-sm text-slate-600">{note}</p> : null}
+    </div>
+  );
+}
+
 export default function AdminHallTicketPage() {
   const [form, setForm] = useState<Design>(EMPTY);
   const [err, setErr] = useState("");
@@ -116,6 +157,7 @@ export default function AdminHallTicketPage() {
           <button type="button" className="px-3 py-1.5 rounded bg-brand text-white text-sm" onClick={save}>
             Save
           </button>
+          <WaiverForm />
         </div>
       </section>
     </AppShell>

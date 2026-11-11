@@ -641,6 +641,62 @@ class Acknowledgement(Base):
     actor_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     recipient_email: Mapped[str] = mapped_column(String(255), default="")
     email_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(32), default="")
+    ref_key: Mapped[str] = mapped_column(String(64), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class NavLink(Base):
+    """Admin-managed sidebar item. A role with any rows uses this menu instead of the built-in one."""
+
+    __tablename__ = "nav_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), index=True)
+    label: Mapped[str] = mapped_column(String(80))
+    href: Mapped[str] = mapped_column(String(200))
+    icon: Mapped[str] = mapped_column(String(32), default="file")
+    group_label: Mapped[str] = mapped_column(String(80), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    visible: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class HallTicketWaiver(Base):
+    """Lets a student receive a hall ticket when attendance is short, after a recommendation."""
+
+    __tablename__ = "hall_ticket_waivers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("student_profiles.id"), unique=True)
+    reason: Mapped[str] = mapped_column(String(500), default="")
+    recommended_by: Mapped[str] = mapped_column(String(120), default="")
+    source: Mapped[str] = mapped_column(String(32), default="faculty")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class GatewaySetting(Base):
+    """Which checkout the institute uses. Own gateway records the payment without an external charge."""
+
+    __tablename__ = "gateway_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), default="own")
+    merchant_name: Mapped[str] = mapped_column(String(120), default="KARE Institute Gateway")
+    key_id: Mapped[str] = mapped_column(String(120), default="")
+    key_secret: Mapped[str] = mapped_column(String(255), default="")
+    live_charges: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class PayrollEntry(Base):
+    __tablename__ = "payroll_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    period: Mapped[str] = mapped_column(String(16))
+    gross: Mapped[float] = mapped_column(Float, default=0)
+    deduction: Mapped[float] = mapped_column(Float, default=0)
+    note: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(16), default="paid")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

@@ -26,6 +26,7 @@ type Ticket = {
   photo_url?: string;
   exams?: Exam[];
   withheld?: Held[];
+  waiver?: { reason: string; recommended_by: string; source: string } | null;
 };
 
 async function fetchPdf() {
@@ -103,6 +104,11 @@ export default function HallTicket() {
           Overall attendance {ticket.overall_attendance ?? 0}%. A subject is listed when attendance is {minimum}% or more
           {ticket.require_overall ? ", and overall attendance must also meet that mark" : ""}.
         </p>
+        {ticket.waiver ? (
+          <p className="text-sm text-[#0B2A4A]">
+            Recommended by {ticket.waiver.source}: {ticket.waiver.recommended_by}. {ticket.waiver.reason}
+          </p>
+        ) : null}
         {canPrint ? (
           <div className="flex flex-wrap gap-2">
             <button type="button" className="px-3 py-1.5 rounded bg-brand text-white text-sm disabled:opacity-50" disabled={busy === "view"} onClick={() => openPdf(false)}>

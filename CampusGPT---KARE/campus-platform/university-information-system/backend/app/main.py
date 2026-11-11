@@ -59,6 +59,7 @@ from app.routes import (
     hostel,
     integration,
     keep_awake,
+    institute,
     integrations,
     marquee,
     messages,
@@ -279,6 +280,27 @@ async def _ensure_directory_columns(conn):
             await conn.execute(text(statement))
 
 
+async def _ensure_ack_columns(conn):
+    """Status and reference on slips created before those fields existed."""
+    from sqlalchemy import text
+
+    name = getattr(getattr(conn, "dialect", None), "name", "") or ""
+    if name != "sqlite":
+        return
+
+    def _cols(sync_conn):
+        rows = sync_conn.execute(text("PRAGMA table_info(acknowledgements)")).fetchall()
+        return {row[1] for row in rows}
+
+    existing = await conn.run_sync(lambda sync_conn: _cols(sync_conn))
+    if not existing:
+        return
+    if "status" not in existing:
+        await conn.execute(text("ALTER TABLE acknowledgements ADD COLUMN status VARCHAR(32) DEFAULT ''"))
+    if "ref_key" not in existing:
+        await conn.execute(text("ALTER TABLE acknowledgements ADD COLUMN ref_key VARCHAR(64) DEFAULT ''"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.environment.lower() == "production":
@@ -306,6 +328,7 @@ async def lifespan(app: FastAPI):
                 await _ensure_directory_columns(conn)
                 await _ensure_application_approval_columns(conn)
                 await _ensure_hall_ticket_columns(conn)
+                await _ensure_ack_columns(conn)
             except Exception:
                 pass
     except Exception as exc:
@@ -457,6 +480,7 @@ app.include_router(marquee.router)
 app.include_router(branding.router)
 app.include_router(admin.router)
 app.include_router(acknowledgements.router)
+app.include_router(institute.router)
 app.include_router(records.router)
 app.include_router(integrations.router)
 app.include_router(exam_applications.router)

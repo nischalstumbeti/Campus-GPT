@@ -73,10 +73,13 @@ export default function ExamApply({ kind }: { kind: "revaluation" | "arrear" | "
     setBusy(course.course_id);
     setErr("");
     try {
-      await apiFetch(`/api/v1/student/applications/${kind}`, {
+      const result = await apiFetch<{ acknowledgement?: { number: string; status: string } }>(`/api/v1/student/applications/${kind}`, {
         method: "POST",
         body: JSON.stringify({ course_id: course.course_id }),
       });
+      if (result.acknowledgement) {
+        setErr(`Slip ${result.acknowledgement.number}. Status: ${result.acknowledgement.status}. Open Acknowledgements to print it.`);
+      }
       setPending(null);
       load();
     } catch (e) {
@@ -99,7 +102,7 @@ export default function ExamApply({ kind }: { kind: "revaluation" | "arrear" | "
         {data.note ? <p className="mt-1 text-slate-600">{data.note}</p> : null}
         {data.enabled && data.fee > 0 ? <p className="mt-1 text-slate-500">Fee ₹{data.fee}</p> : null}
       </div>
-      {err ? <p className="px-4 py-2 text-sm text-red-600">{err}</p> : null}
+      {err ? <p className={`px-4 py-2 text-sm ${err.startsWith("Slip ") ? "text-emerald-700" : "text-red-600"}`}>{err}</p> : null}
       {data.enabled ? (
         <table className="w-full text-sm">
           <thead className="uis-table-head text-left text-xs">

@@ -1,6 +1,7 @@
 """Save an acknowledgement, alert the user, and email the slip."""
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Acknowledgement, AppNotification, User
@@ -26,19 +27,36 @@ async def issue_acknowledgement(
     title: str,
     summary: str,
     email: str | None = None,
+    status: str = "",
+    ref_key: str = "",
 ) -> dict:
     recipient = (email or (user.email if user else "") or "").strip()
-    row = Acknowledgement(
+    row = None
+    if ref_key:
+        row = (
+            await db.execute(select(Acknowledgement).where(Acknowledgement.ref_key == ref_key))
+        ).scalars().first()
+    if row is None:
+        row = Acknowledgement(
         kind=kind[:40],
         title=title[:200],
         summary=summary,
         actor_user_id=user.id if user else None,
         recipient_email=recipient,
         email_sent=False,
-    )
-    db.add(row)
-    await db.flush()
-    row.number = f"UIS-{row.created_at:%Y%m%d}-{row.id:05d}"
+        status=status[:32],
+        ref_key=ref_key[:64],
+        )
+        db.add(row)
+        await db.flush()
+        row.number = f"UIS-{row.created_at:%Y%m%d}-{row.id:05d}"
+    row.kind = kind[:40]
+    row.title = title[:200]
+    row.summary = summary
+    row.status = status[:32]
+    row.recipient_email = recipient
+    if user is not None:
+        row.actor_user_id = user.id
     if user is not None:
         db.add(
             AppNotification(
@@ -64,5 +82,6 @@ async def issue_acknowledgement(
         "title": row.title,
         "email": recipient,
         "email_sent": row.email_sent,
+        "status": row.status,
         "link": f"/ack/{row.number}",
     }

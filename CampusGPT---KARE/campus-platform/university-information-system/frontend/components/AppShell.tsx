@@ -74,7 +74,7 @@ type IconName =
   | "star" | "link" | "plus" | "wallet" | "receipt" | "message" | "megaphone" | "chat"
   | "building" | "lock" | "users" | "folder" | "activity";
 
-function NavIcon({ name }: { name: IconName }) {
+function NavIcon({ name }: { name: string }) {
   const paths: Record<IconName, string> = {
     home: "M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z",
     check: "M5 12.5 9.2 17 19 7",
@@ -108,7 +108,7 @@ function NavIcon({ name }: { name: IconName }) {
   };
   return (
     <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-      <path d={paths[name]} strokeLinecap="round" strokeLinejoin="round" />
+      <path d={paths[name as IconName] || paths.file} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -218,6 +218,7 @@ const FACULTY_SECTIONS: { title: string; items: FacultyNode[] }[] = [
         ],
       },
       { href: "/faculty/timetable", label: "My Class Time Table", icon: "calendar" },
+      { href: "/faculty/payroll", label: "Payroll", icon: "wallet" },
       { href: "/faculty/module/biometric", label: "Attendance", icon: "check" },
       {
         label: "Assign Courses",
@@ -350,6 +351,8 @@ const ADMIN: NavItem[] = [
   { href: "/admin/connections", label: "Connections", icon: "activity" },
   { href: "/admin/cms", label: "Admin CMS", icon: "folder" },
   { href: "/admin/fees", label: "Fee deadlines", icon: "wallet" },
+  { href: "/admin/finance", label: "Finance", icon: "receipt" },
+  { href: "/admin/menu", label: "Sidebar", icon: "folder" },
   { href: "/admin/allocation", label: "Course allocation", icon: "clipboard" },
   { href: "/admin/records", label: "Timetable & exams", icon: "calendar" },
   { href: "/admin/marks", label: "Enter marks", icon: "chart" },
@@ -392,6 +395,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [adminReturn, setAdminReturn] = useState(false);
+  const [customNav, setCustomNav] = useState<{ custom: boolean; items: { label: string; href: string; icon: string; group: string }[] } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -420,6 +424,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
     };
   }, [router]);
 
+  useEffect(() => {
+    if (!me) return;
+    apiFetch<{ custom: boolean; items: { label: string; href: string; icon: string; group: string }[] }>("/api/v1/navigation")
+      .then(setCustomNav)
+      .catch(() => setCustomNav({ custom: false, items: [] }));
+  }, [me]);
+
   const links = linksForRole(me?.role);
   const facultyShell = me?.role === "faculty" || me?.role === "hod" || me?.role === "school_dean";
 
@@ -438,9 +449,22 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
-      {me?.role === "student" ? <StudentNav pathname={pathname} onNavigate={onNavigate} /> : null}
-      {(me?.role === "faculty" || me?.role === "hod" || me?.role === "school_dean") ? <FacultyNav pathname={pathname} onNavigate={onNavigate} /> : null}
-      {links.map((l) => {
+      {customNav?.custom
+        ? customNav.items.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link key={`${item.href}-${item.label}`} href={item.href} onClick={onNavigate} className={itemClass(active)}>
+                <span className={active ? "text-brand" : "text-slate-500"}>
+                  <NavIcon name={item.icon} />
+                </span>
+                <span className="flex-1">{item.group ? `${item.group} · ${item.label}` : item.label}</span>
+              </Link>
+            );
+          })
+        : null}
+      {!customNav?.custom && me?.role === "student" ? <StudentNav pathname={pathname} onNavigate={onNavigate} /> : null}
+      {!customNav?.custom && (me?.role === "faculty" || me?.role === "hod" || me?.role === "school_dean") ? <FacultyNav pathname={pathname} onNavigate={onNavigate} /> : null}
+      {!customNav?.custom && links.map((l) => {
         const isRoot = ["/faculty", "/student", "/hostel", "/admin"].includes(l.href);
         const active = pathname === l.href || (!isRoot && pathname.startsWith(l.href + "/"));
         return (

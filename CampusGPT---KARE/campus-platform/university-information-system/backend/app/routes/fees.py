@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import FeePayment, FeePlan, FeeReminder, HostelAllocation, StudentFee, StudentProfile, User
+from app.models import FeePayment, FeePlan, FeeReminder, GatewaySetting, HostelAllocation, StudentFee, StudentProfile, User
+from app.services.acknowledge import issue_acknowledgement
 from app.security.auth import get_current_user, require_roles
 
 router = APIRouter(prefix="/api/v1/fees", tags=["fees"])
@@ -166,6 +167,15 @@ async def pay_fee(
         raise HTTPException(status_code=400, detail=f"Amount exceeds remaining {remaining}")
     if body.amount <= 0:
         raise HTTPException(status_code=400, detail="Enter a valid amount")
+    gateway = (await db.execute(select(GatewaySetting).order_by(GatewaySetting.id))).scalars().first()
+    provider = (gateway.provider if gateway else "own") or "own"
+    if provider == "none":
+        raise HTTPException(status_code=403, detail="Fee collection is closed. An administrator has not enabled a payment gateway.")
+    if provider != "own" and gateway and gateway.live_charges:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{provider} is selected for live charges. Switch live charges off to collect on the institute gateway while testing.",
+        )
     # Optimistic concurrency — works on SQLite where FOR UPDATE is a no-op
     from sqlalchemy import update
 
@@ -190,6 +200,25 @@ async def pay_fee(
     db.add(pay)
     await db.flush()
     await db.refresh(fee)
+    merchant = gateway.merchant_name if gateway else "Institute gateway"
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind="payment",
+        title=f"Fee receipt {receipt_no}",
+        summary=(
+            f"Payer: {user.full_name}\n"
+            f"Fee: {fee.title}\n"
+            f"Amount: {round(body.amount, 2)}\n"
+            f"Method: {pay.method}\n"
+            f"Gateway: {merchant} ({provider})\n"
+            f"Status: {new_status}\n"
+            f"Receipt: {receipt_no}"
+        ),
+        email=user.email,
+        status=new_status,
+        ref_key=f"payment:{pay.id}",
+    )
     new_remaining = max(0.0, round((fee.total_amount or 0) - (fee.paid_amount or 0), 2))
     return {
         "ok": True,
@@ -207,7 +236,8 @@ async def pay_fee(
             "paid_at": pay.created_at.isoformat() if pay.created_at else datetime.utcnow().isoformat(),
             "status": fee.status,
         },
-        "message": f"Payment successful. Receipt {receipt_no}",
+        "acknowledgement": ack,
+        "message": f"Payment successful. Receipt {receipt_no}. Slip {ack['number']}",
         "source": "UIS",
     }
 

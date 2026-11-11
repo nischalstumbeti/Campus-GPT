@@ -22,6 +22,7 @@ def _public(row: Acknowledgement) -> dict:
         "summary": row.summary,
         "email": row.recipient_email,
         "email_sent": row.email_sent,
+        "status": row.status or "",
         "created_at": row.created_at.isoformat() if row.created_at else "",
     }
 

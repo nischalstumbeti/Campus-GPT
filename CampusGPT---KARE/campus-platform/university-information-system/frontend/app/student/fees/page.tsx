@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 
@@ -37,6 +38,9 @@ export default function StudentFeesPage() {
   const [err, setErr] = useState("");
   const [payBusy, setPayBusy] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [slip, setSlip] = useState("");
+  const [method, setMethod] = useState("UPI");
+  const [gateway, setGateway] = useState<{ provider: string; merchant_name: string } | null>(null);
 
   const load = () =>
     apiFetch<{ fees: Fee[]; reminders: { id: number; message: string }[]; category: string }>("/api/v1/fees/mine")
@@ -49,6 +53,9 @@ export default function StudentFeesPage() {
 
   useEffect(() => {
     load();
+    apiFetch<{ provider: string; merchant_name: string }>("/api/v1/finance/gateway")
+      .then(setGateway)
+      .catch(() => setGateway(null));
   }, []);
 
   const pay = async (e: FormEvent, fee: Fee) => {
@@ -60,11 +67,12 @@ export default function StudentFeesPage() {
     if (!amount) return;
     setPayBusy(true);
     try {
-      const res = await apiFetch<{ receipt: Receipt; message: string }>(`/api/v1/fees/mine/${fee.id}/pay`, {
+      const res = await apiFetch<{ receipt: Receipt; message: string; acknowledgement?: { number: string; link: string } }>(`/api/v1/fees/mine/${fee.id}/pay`, {
         method: "POST",
-        body: JSON.stringify({ amount, method: "mock_upi", note: "UIS portal payment" }),
+        body: JSON.stringify({ amount, method, note: `Collected on ${gateway?.merchant_name || "the institute gateway"}` }),
       });
       setReceipt(res.receipt);
+      setSlip(res.acknowledgement?.number || "");
       setMsg(res.message);
       setEditing((p) => ({ ...p, [fee.id]: false }));
       load();
@@ -79,7 +87,8 @@ export default function StudentFeesPage() {
     <AppShell>
       <h1 className="text-2xl font-bold text-brand mb-1">Pay fees</h1>
       <p className="text-sm text-slate-600 mb-4">
-        Same fee records as Campus-GPT (UIS is the source of truth). Category:{" "}
+        Payments are collected by {gateway?.merchant_name || "the institute gateway"}
+        {gateway?.provider ? ` (${gateway.provider})` : ""}. Category:{" "}
         <span className="font-medium capitalize">{category.replace("_", " ") || "—"}</span>
       </p>
       {err && <p className="text-sm text-red-700 mb-3">{err}</p>}
@@ -132,6 +141,15 @@ export default function StudentFeesPage() {
                         onChange={(e) => setPayAmount((p) => ({ ...p, [f.id]: e.target.value }))}
                       />
                     </label>
+                    <label className="text-xs text-slate-500">
+                      Pay using
+                      <select className="mt-1 block border rounded-md px-3 py-2 text-sm" value={method} onChange={(e) => setMethod(e.target.value)}>
+                        <option>UPI</option>
+                        <option>Card</option>
+                        <option>Net banking</option>
+                        <option>Cash at counter</option>
+                      </select>
+                    </label>
                     <button
                       type="submit"
                       disabled={payBusy}
@@ -172,6 +190,11 @@ export default function StudentFeesPage() {
               <div className="flex justify-between"><dt>Total paid</dt><dd>₹{receipt.paid_amount}</dd></div>
               <div className="flex justify-between"><dt>Remaining</dt><dd className="text-amber-700 font-semibold">₹{receipt.remaining}</dd></div>
             </dl>
+            {slip ? (
+              <p className="mt-3 text-sm">
+                Slip <Link className="underline text-[#0B2A4A]" href={`/ack/${slip}`}>{slip}</Link>
+              </p>
+            ) : null}
             <button type="button" className="mt-4 w-full py-2 bg-brand text-white rounded-md text-sm" onClick={() => setReceipt(null)}>
               Close
             </button>

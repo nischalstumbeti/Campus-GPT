@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import (
+    Course,
     CourseOffering,
     Enrollment,
     ExamApplication,
@@ -163,15 +164,36 @@ async def apply_exam(
     ).scalar_one_or_none()
     if existing:
         return {"ok": True, "status": existing.status}
-    db.add(
-        ExamApplication(
-            student_id=user.student.id,
-            course_id=body.course_id,
-            kind=kind,
-            status="submitted",
-            advisor_status="pending",
-            hod_status="pending",
-        )
+    application = ExamApplication(
+        student_id=user.student.id,
+        course_id=body.course_id,
+        kind=kind,
+        status="submitted",
+        advisor_status="pending",
+        hod_status="pending",
+    )
+    db.add(application)
+    await db.flush()
+    course = await db.get(Course, body.course_id)
+    label = SERVICE_LABELS.get(kind, kind)
+    code = course.code if course else str(body.course_id)
+    title = course.title if course else ""
+    ack = await issue_acknowledgement(
+        db,
+        user=user,
+        kind=kind,
+        title=f"{label} application",
+        summary=(
+            f"Register {user.student.student_id}\n"
+            f"Service: {label}\n"
+            f"Course: {code} {title}\n"
+            f"Status: submitted\n"
+            f"Faculty advisor: pending\n"
+            f"HoD: pending"
+        ),
+        email=user.email,
+        status="submitted",
+        ref_key=f"exam:{application.id}",
     )
     await write_audit(
         db,
@@ -183,7 +205,7 @@ async def apply_exam(
         purpose=f"{kind}:{body.course_id}",
         result="ALLOWED",
     )
-    return {"ok": True, "status": "submitted"}
+    return {"ok": True, "status": "submitted", "acknowledgement": ack}
 
 
 SERVICE_LABELS = {
@@ -509,23 +531,32 @@ async def submit_registration(
         raise HTTPException(status_code=400, detail="A request is already with the faculty advisor or HoD.")
     actor_name = user.username
     actor_role = user.role
-    db.add(
-        RegistrationRequest(
-            student_id=user.student.id,
-            kind=kind,
-            offering_ids=",".join(str(item) for item in chosen),
-            status="submitted",
-            advisor_status="pending",
-            hod_status="pending",
-        )
+    request_row = RegistrationRequest(
+        student_id=user.student.id,
+        kind=kind,
+        offering_ids=",".join(str(item) for item in chosen),
+        status="submitted",
+        advisor_status="pending",
+        hod_status="pending",
     )
+    db.add(request_row)
+    await db.flush()
     ack = await issue_acknowledgement(
         db,
         user=user,
         kind=kind,
         title="Registration submitted" if kind == "registration" else "Withdrawal submitted",
-        summary=f"{kind} for {user.student.student_id}. Courses: {', '.join(str(item) for item in chosen)}. Status: with the faculty advisor.",
+        summary=(
+            f"Register {user.student.student_id}\n"
+            f"Service: {kind}\n"
+            f"Courses: {', '.join(str(item) for item in chosen)}\n"
+            f"Status: submitted\n"
+            f"Faculty advisor: pending\n"
+            f"HoD: pending"
+        ),
         email=user.email,
+        status="submitted",
+        ref_key=f"registration:{request_row.id}",
     )
     await write_audit(
         db,
@@ -716,6 +747,29 @@ async def decide_approval(
         row.advisor_status = body.decision
         stage = "advisor"
     row.status = _advance(row.advisor_status or "pending", row.hod_status or "pending")
+    student = (
+        await db.execute(
+            select(StudentProfile).where(StudentProfile.id == row.student_id).options(selectinload(StudentProfile.user))
+        )
+    ).scalar_one_or_none()
+    if student and student.user:
+        label = SERVICE_LABELS.get(row.kind, row.kind)
+        await issue_acknowledgement(
+            db,
+            user=student.user,
+            kind=row.kind,
+            title=f"{label} application",
+            summary=(
+                f"Register {student.student_id}\n"
+                f"Service: {label}\n"
+                f"Status: {row.status}\n"
+                f"Faculty advisor: {row.advisor_status}\n"
+                f"HoD: {row.hod_status}"
+            ),
+            email=student.user.email,
+            status=row.status,
+            ref_key=f"{source}:{row.id}",
+        )
     actor_name = user.username
     actor_role = user.role
     await write_audit(

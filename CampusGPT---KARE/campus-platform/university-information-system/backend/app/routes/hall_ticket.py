@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import CourseOffering, Enrollment, ExamSchedule, HallTicketSettings, Program, User
+from app.models import CourseOffering, Enrollment, ExamSchedule, HallTicketSettings, HallTicketWaiver, Program, User
 from app.security.auth import require_roles
 from app.services.attendance_board import courses_for_student
 from app.services.audit import write_audit
@@ -81,13 +81,18 @@ async def _ticket(db: AsyncSession, user: User) -> dict:
     minimum = 75.0 if settings.min_attendance is None else float(settings.min_attendance)
     require_overall = bool(settings.require_overall)
     require_subject = bool(settings.require_subject)
-    overall_ok = (not require_overall) or overall >= minimum
+    waiver = (
+        await db.execute(
+            select(HallTicketWaiver).where(HallTicketWaiver.student_id == student.id, HallTicketWaiver.active.is_(True))
+        )
+    ).scalar_one_or_none()
+    overall_ok = bool(waiver) or (not require_overall) or overall >= minimum
     eligible = []
     withheld = []
     for exam in exams:
         course = by_code.get(exam["code"])
         percentage = float(course["percentage"]) if course else 0.0
-        subject_ok = (not require_subject) or percentage >= minimum
+        subject_ok = bool(waiver) or (not require_subject) or percentage >= minimum
         if overall_ok and subject_ok:
             eligible.append({**exam, "attendance": percentage})
         else:
@@ -124,6 +129,11 @@ async def _ticket(db: AsyncSession, user: User) -> dict:
         "require_subject": require_subject,
         "overall_attendance": overall,
         "overall_ok": overall_ok,
+        "waiver": (
+            {"reason": waiver.reason, "recommended_by": waiver.recommended_by, "source": waiver.source}
+            if waiver
+            else None
+        ),
         "exams": eligible,
         "withheld": withheld,
     }
