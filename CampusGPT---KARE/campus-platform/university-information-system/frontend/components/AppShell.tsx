@@ -352,48 +352,96 @@ const HOSTEL: NavItem[] = [
   { href: "/settings", label: "Change password", icon: "lock" },
 ];
 
-const ADMIN: NavItem[] = [
-  { href: "/admin", label: "Dashboard", icon: "home" },
-  { href: "/admin/connections", label: "Connections", icon: "activity" },
-  { href: "/admin/cms", label: "Admin CMS", icon: "folder" },
-  { href: "/admin/fees", label: "Fee deadlines", icon: "wallet" },
-  { href: "/admin/finance", label: "Finance", icon: "receipt" },
-  { href: "/admin/menu", label: "Sidebar", icon: "folder" },
-  { href: "/admin/forms", label: "Forms", icon: "clipboard" },
-  { href: "/forms/results", label: "Form results", icon: "chart" },
-  { href: "/admin/groups", label: "Groups", icon: "users" },
-  { href: "/community", label: "Community", icon: "users" },
-  { href: "/admin/allocation", label: "Course allocation", icon: "clipboard" },
-  { href: "/admin/records", label: "Timetable & exams", icon: "calendar" },
-  { href: "/admin/marks", label: "Enter marks", icon: "chart" },
-  { href: "/admin/attendance", label: "Enter attendance", icon: "check" },
-  { href: "/admin/applications", label: "Exam applications", icon: "clipboard" },
-  { href: "/admin/hall-ticket", label: "Hall ticket", icon: "ticket" },
-  { href: "/directory", label: "Directory", icon: "users" },
-  { href: "/messages", label: "Inbox", icon: "chat" },
-  { href: "/admin/users", label: "Users", icon: "users" },
-  { href: "/admin/students/view", label: "View students", icon: "users" },
-  { href: "/admin/students", label: "Filter / edit students", icon: "clipboard" },
-  { href: "/admin/services", label: "Service monitor", icon: "activity" },
-  { href: "/ack", label: "Acknowledgements", icon: "file" },
-  { href: "/admin/audit", label: "Audit Logs", icon: "file" },
-  { href: "/settings", label: "Change password", icon: "lock" },
+const ADMIN_SECTIONS: { title: string; items: NavItem[] }[] = [
+  {
+    title: "Campus",
+    items: [
+      { href: "/admin", label: "Dashboard", icon: "home" },
+      { href: "/admin/cms", label: "Notices & CMS", icon: "folder" },
+      { href: "/admin/marquee", label: "Marquee", icon: "megaphone" },
+      { href: "/directory", label: "Directory", icon: "users" },
+      { href: "/messages", label: "Inbox", icon: "chat" },
+      { href: "/admin/menu", label: "Sidebar", icon: "folder" },
+    ],
+  },
+  {
+    title: "People",
+    items: [
+      { href: "/admin/users", label: "Users", icon: "users" },
+      { href: "/admin/students/view", label: "View students", icon: "users" },
+      { href: "/admin/students", label: "Filter / edit students", icon: "clipboard" },
+      { href: "/admin/groups", label: "Groups", icon: "users" },
+      { href: "/community", label: "Community", icon: "users" },
+    ],
+  },
+  {
+    title: "Academics",
+    items: [
+      { href: "/admin/allocation", label: "Course allocation", icon: "book" },
+      { href: "/admin/records", label: "Timetable & exams", icon: "calendar" },
+      { href: "/admin/marks", label: "Enter marks", icon: "chart" },
+      { href: "/admin/attendance", label: "Enter attendance", icon: "check" },
+    ],
+  },
+  {
+    title: "Examinations",
+    items: [
+      { href: "/admin/applications", label: "Exam applications", icon: "clipboard" },
+      { href: "/admin/hall-ticket", label: "Hall ticket", icon: "ticket" },
+      { href: "/ack", label: "Acknowledgements", icon: "file" },
+    ],
+  },
+  {
+    title: "Finance",
+    items: [
+      { href: "/admin/fees", label: "Fee deadlines", icon: "wallet" },
+      { href: "/admin/finance", label: "Finance register", icon: "receipt" },
+    ],
+  },
+  {
+    title: "Forms",
+    items: [
+      { href: "/admin/forms", label: "Forms", icon: "clipboard" },
+      { href: "/forms/results", label: "Form results", icon: "chart" },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { href: "/admin/connections", label: "Connections", icon: "activity" },
+      { href: "/admin/services", label: "Service monitor", icon: "activity" },
+      { href: "/admin/audit", label: "Audit logs", icon: "file" },
+      { href: "/settings", label: "Change password", icon: "lock" },
+    ],
+  },
 ];
+
+function AdminNav({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  return (
+    <div className="space-y-3">
+      {ADMIN_SECTIONS.map((section) => (
+        <div key={section.title}>
+          <p className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{section.title}</p>
+          <div className="space-y-0.5">
+            {section.items.map((item) => (
+              <NavItemLink key={item.href} item={item} active={pathname === item.href} onNavigate={onNavigate} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function linksForRole(role?: string) {
   if (!role) return [];
   if (role === "student") return [];
   if (role === "faculty" || role === "hod" || role === "school_dean") return [];
   if (role === "hostel_admin" || role === "warden" || role === "hostel_warden") return HOSTEL;
-  if (
-    ["admin", "university_admin", "super_admin", "department_admin", "exam_admin", "director", "coe", "operator", "developer"].includes(
-      role
-    )
-  ) {
-    return ADMIN;
-  }
   return [];
 }
+
+const ADMIN_ROLES = ["admin", "university_admin", "super_admin", "department_admin", "exam_admin", "director", "coe", "operator", "developer"];
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -443,6 +491,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const links = linksForRole(me?.role);
   const facultyShell = me?.role === "faculty" || me?.role === "hod" || me?.role === "school_dean";
+  const adminShell = !!me && ADMIN_ROLES.includes(me.role);
 
   const logout = () => {
     clearToken();
@@ -459,22 +508,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
-      {customNav?.custom
-        ? customNav.items.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link key={`${item.href}-${item.label}`} href={item.href} onClick={onNavigate} className={itemClass(active)}>
-                <span className={active ? "text-brand" : "text-slate-500"}>
-                  <NavIcon name={item.icon} />
-                </span>
-                <span className="flex-1">{item.group ? `${item.group} · ${item.label}` : item.label}</span>
-              </Link>
-            );
-          })
-        : null}
-      {!customNav?.custom && me?.role === "student" ? <StudentNav pathname={pathname} onNavigate={onNavigate} /> : null}
-      {!customNav?.custom && (me?.role === "faculty" || me?.role === "hod" || me?.role === "school_dean") ? <FacultyNav pathname={pathname} onNavigate={onNavigate} /> : null}
-      {!customNav?.custom && links.map((l) => {
+      {me?.role === "student" ? <StudentNav pathname={pathname} onNavigate={onNavigate} /> : null}
+      {facultyShell ? <FacultyNav pathname={pathname} onNavigate={onNavigate} /> : null}
+      {adminShell ? <AdminNav pathname={pathname} onNavigate={onNavigate} /> : null}
+      {links.map((l) => {
         const isRoot = ["/faculty", "/student", "/hostel", "/admin"].includes(l.href);
         const active = pathname === l.href || (!isRoot && pathname.startsWith(l.href + "/"));
         return (
@@ -492,6 +529,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </Link>
         );
       })}
+      {customNav?.items?.length ? (
+        <div className="pt-3">
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Added</p>
+          {customNav.items.map((item) => {
+            const active = pathname === item.href;
+            const row = facultyShell
+              ? `flex items-center gap-2.5 min-h-11 px-3 py-2 rounded-md text-[15px] leading-5 ${active ? "bg-white/10 text-white" : "text-slate-200 hover:bg-white/10"}`
+              : itemClass(active);
+            return (
+              <Link key={`${item.href}-${item.label}`} href={item.href} onClick={onNavigate} className={row}>
+                <span className={active ? (facultyShell ? "text-white" : "text-brand") : facultyShell ? "text-slate-300" : "text-slate-500"}>
+                  <NavIcon name={item.icon} />
+                </span>
+                <span className="flex-1">{item.group ? `${item.group} · ${item.label}` : item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
     </>
   );
 

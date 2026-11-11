@@ -841,6 +841,12 @@ async def upload_answer_file(
     form = (await db.execute(select(ServiceForm).where(ServiceForm.id == form_id, ServiceForm.is_open.is_(True)))).scalar_one_or_none()
     if not form:
         raise HTTPException(status_code=404, detail="This form is not open")
+    grants = {
+        item.casefold()
+        for item in (await db.execute(select(FormGrant.identity).where(FormGrant.form_id == form.id))).scalars().all()
+    }
+    if not _allowed(user, form, grants):
+        raise HTTPException(status_code=404, detail="This form is not open")
     return {"stored": await _save_upload(upload)}
 
 

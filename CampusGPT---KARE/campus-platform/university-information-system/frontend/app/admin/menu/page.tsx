@@ -15,7 +15,7 @@ type Item = {
   visible: boolean;
 };
 
-const ROLES = ["student", "faculty", "hod", "admin", "hostel_admin", "coe"];
+const ROLES = ["student", "faculty", "hod", "school_dean", "admin", "university_admin", "super_admin", "director", "operator", "developer", "coe", "hostel_admin"];
 
 export default function MenuPage() {
   const [role, setRole] = useState("student");
@@ -43,7 +43,7 @@ export default function MenuPage() {
         body: JSON.stringify({ ...form, role, visible: true }),
       });
       setForm({ label: "", href: "/", icon: "file", group: "", sort_order: 0 });
-      setMsg("Menu item saved. This role now uses the custom sidebar.");
+      setMsg("Added. It appears under Added for that role. The campus menu stays.");
       load();
     } catch (error) {
       setErr(error instanceof Error ? error.message : "Could not save");
@@ -77,7 +77,7 @@ export default function MenuPage() {
       <section className="uis-panel">
         <h1 className="uis-panel-title">Sidebar</h1>
         <p className="px-4 py-3 text-sm text-slate-600 border-b">
-          Add, hide, or remove a menu item for one role. Until you add the first item, that role keeps the built-in menu. After the first item, only the items you leave visible are shown.
+          Add an extra item for one role. It is shown under Added. The campus menu stays in place. Use an address that starts with /, such as /admin/forms.
         </p>
         <div className="p-4 space-y-3">
           {err ? <p className="text-sm text-red-600">{err}</p> : null}

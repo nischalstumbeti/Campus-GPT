@@ -1,6 +1,8 @@
 """Save an acknowledgement, alert the user, and email the slip."""
 from __future__ import annotations
 
+import secrets
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +49,7 @@ async def issue_acknowledgement(
         email_sent=False,
         status=status[:32],
         ref_key=ref_key[:64],
+        verify_code=secrets.token_urlsafe(18),
         )
         db.add(row)
         await db.flush()
@@ -56,6 +59,8 @@ async def issue_acknowledgement(
     row.summary = summary
     row.status = status[:32]
     row.recipient_email = recipient
+    if not row.verify_code:
+        row.verify_code = secrets.token_urlsafe(18)
     if user is not None:
         row.actor_user_id = user.id
     if user is not None:

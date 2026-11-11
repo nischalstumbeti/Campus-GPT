@@ -1,4 +1,5 @@
 """Read a stored acknowledgement slip."""
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -37,6 +38,30 @@ def _public(row: Acknowledgement) -> dict:
     }
 
 
+def _seal(row: Acknowledgement) -> None:
+    if not row.verify_code:
+        row.verify_code = secrets.token_urlsafe(18)
+
+
+@router.get("/verify/{code}")
+async def verify_acknowledgement(code: str, db: Annotated[AsyncSession, Depends(get_db)]):
+    token = code.strip()
+    if len(token) < 12 or any(ch.isspace() for ch in token):
+        raise HTTPException(status_code=404, detail="This code does not match an issued acknowledgement")
+    row = (
+        await db.execute(select(Acknowledgement).where(Acknowledgement.verify_code == token))
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="This code does not match an issued acknowledgement")
+    return {
+        "valid": True,
+        "number": row.number,
+        "title": row.title,
+        "status": row.status or "recorded",
+        "issued_at": row.created_at.isoformat() if row.created_at else "",
+    }
+
+
 @router.get("")
 async def my_acknowledgements(
     user: Annotated[User, Depends(get_current_user)],
@@ -64,4 +89,7 @@ async def one_acknowledgement(
         raise HTTPException(status_code=404, detail="Acknowledgement not found")
     if user.role not in _ADMIN and row.actor_user_id != user.id and row.recipient_email != user.email:
         raise HTTPException(status_code=404, detail="Acknowledgement not found")
-    return _public(row)
+    _seal(row)
+    payload = _public(row)
+    payload["verify_path"] = f"/ack/verify/{row.verify_code}"
+    return payload

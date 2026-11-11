@@ -93,6 +93,13 @@ async def list_navigation(
     }
 
 
+def _safe_href(raw: str) -> str:
+    href = raw.strip()
+    if not href.startswith("/") or href.startswith("//") or "\\" in href or ":" in href or ".." in href:
+        raise HTTPException(status_code=400, detail="Use an address inside this site, starting with /")
+    return href[:200]
+
+
 class NavIn(BaseModel):
     role: str = "student"
     label: str = Field(min_length=1, max_length=80)
@@ -116,7 +123,7 @@ async def create_nav(body: NavIn, _: Annotated[User, Depends(EditRoles)], db: An
     row = NavLink(
         role=body.role.strip()[:32],
         label=body.label.strip(),
-        href=body.href.strip(),
+        href=_safe_href(body.href),
         icon=(body.icon or "file")[:32],
         group_label=(body.group or "")[:80],
         sort_order=body.sort_order,
@@ -140,7 +147,7 @@ async def update_nav(
     if body.label is not None:
         row.label = body.label.strip()[:80]
     if body.href is not None:
-        row.href = body.href.strip()[:200]
+        row.href = _safe_href(body.href)
     if body.visible is not None:
         row.visible = body.visible
     if body.sort_order is not None:

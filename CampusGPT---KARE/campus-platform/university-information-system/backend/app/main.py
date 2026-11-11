@@ -301,6 +301,8 @@ async def _ensure_ack_columns(conn):
         await conn.execute(text("ALTER TABLE acknowledgements ADD COLUMN status VARCHAR(32) DEFAULT ''"))
     if "ref_key" not in existing:
         await conn.execute(text("ALTER TABLE acknowledgements ADD COLUMN ref_key VARCHAR(64) DEFAULT ''"))
+    if "verify_code" not in existing:
+        await conn.execute(text("ALTER TABLE acknowledgements ADD COLUMN verify_code VARCHAR(64) DEFAULT ''"))
 
 
 async def _ensure_slip_kind(conn):

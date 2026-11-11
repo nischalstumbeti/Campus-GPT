@@ -643,11 +643,12 @@ class Acknowledgement(Base):
     email_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(32), default="")
     ref_key: Mapped[str] = mapped_column(String(64), default="", index=True)
+    verify_code: Mapped[str] = mapped_column(String(64), default="", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class NavLink(Base):
-    """Admin-managed sidebar item. A role with any rows uses this menu instead of the built-in one."""
+    """An extra sidebar item. It is shown under Added and does not replace the campus menu."""
 
     __tablename__ = "nav_links"
 
