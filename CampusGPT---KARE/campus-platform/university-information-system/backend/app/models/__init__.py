@@ -734,6 +734,7 @@ class ServiceForm(Base):
     email_body: Mapped[str] = mapped_column(Text, default="")
     slip_json: Mapped[str] = mapped_column(Text, default="{}")
     public_code: Mapped[str] = mapped_column(String(32), default="", index=True)
+    collect_json: Mapped[str] = mapped_column(Text, default="[]")
     created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

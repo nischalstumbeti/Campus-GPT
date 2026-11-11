@@ -43,6 +43,20 @@ Admins = {"university_admin", "admin", "super_admin", "developer", "operator"}
 AUDIENCES = {"all_students", "listed", "any_signed_in", "open"}
 FIELD_TYPES = {"text", "long", "number", "date", "choice", "link", "file"}
 EMAIL_MODES = {"none", "acknowledgement", "message"}
+PROFILE_FIELDS = {
+    "name": "Name",
+    "email": "Email",
+    "register_or_employee": "Register number or employee id",
+    "program": "Programme",
+    "department": "Department",
+    "batch": "Batch",
+    "section": "Section",
+    "semester": "Semester",
+    "designation": "Designation",
+    "school": "School",
+    "abc_id": "ABC ID",
+}
+DEFAULT_COLLECT = ["name", "email", "register_or_employee"]
 LAYOUTS = {
     "general": ("ACKNOWLEDGEMENT", "Registrar", "Office of the Registrar"),
     "form": ("FORM ACKNOWLEDGEMENT", "Dean", "Office of the Dean"),
@@ -104,6 +118,7 @@ def _public_form(form: ServiceForm, *, used: int = 0, identities: Optional[list[
         "email_body": form.email_body or "",
         "slip": json.loads(form.slip_json or "{}"),
         "public_code": form.public_code or "",
+        "collect": _collect(form),
         "created_at": form.created_at.isoformat() if form.created_at else "",
     }
 
@@ -129,6 +144,52 @@ def _shown(field: dict, answers: dict) -> bool:
         return True
     key, expected = rule.split("=", 1)
     return str(answers.get(key.strip()) or "") == expected.strip()
+
+
+def _collect(form: ServiceForm) -> list[str]:
+    raw = json.loads(form.collect_json or "[]")
+    if not isinstance(raw, list):
+        return []
+    return [key for key in raw if key in PROFILE_FIELDS]
+
+
+def _profile_values(user: User) -> dict[str, str]:
+    student = user.student
+    faculty = user.faculty
+    program = ""
+    if student and student.program:
+        program = student.program.name or ""
+    register = ""
+    if student and student.student_id:
+        register = student.student_id
+    elif faculty and faculty.faculty_id:
+        register = faculty.faculty_id
+    return {
+        "name": user.full_name or "",
+        "email": user.email or "",
+        "register_or_employee": register,
+        "program": program,
+        "department": user.department_code or "",
+        "batch": student.batch if student else "",
+        "section": student.section if student else "",
+        "semester": str(student.semester) if student else "",
+        "designation": user.designation or (faculty.designation if faculty else ""),
+        "school": user.school or "",
+        "abc_id": user.abc_id or "",
+    }
+
+
+def _attach_profile(form: ServiceForm, user: User | None, stored: dict, lines: list[str]) -> list[dict]:
+    if user is None or form.audience == "open":
+        return []
+    values = _profile_values(user)
+    attached = []
+    for key in _collect(form):
+        value = values.get(key) or "Not on the account"
+        stored[f"profile:{key}"] = value
+        lines.append(f"{PROFILE_FIELDS[key]}: {value}")
+        attached.append({"key": key, "label": PROFILE_FIELDS[key], "value": value})
+    return attached
 
 
 def _slip(form: ServiceForm) -> dict:
@@ -189,6 +250,7 @@ class FormIn(BaseModel):
     email_subject: str = ""
     email_body: str = ""
     slip: SlipIn = SlipIn()
+    collect: list[str] = DEFAULT_COLLECT
     fields: list[FieldIn]
 
 
@@ -204,6 +266,7 @@ class FormPatch(BaseModel):
     email_subject: Optional[str] = None
     email_body: Optional[str] = None
     slip: Optional[SlipIn] = None
+    collect: Optional[list[str]] = None
     fields: Optional[list[FieldIn]] = None
 
 
@@ -278,6 +341,7 @@ async def create_form(body: FormIn, user: Annotated[User, Depends(Staff)], db: A
         email_body=body.email_body.strip()[:4000],
         slip_json=json.dumps(body.slip.model_dump()),
         public_code=secrets.token_urlsafe(8),
+        collect_json=json.dumps([key for key in body.collect if key in PROFILE_FIELDS]),
         fields_json=json.dumps(_clean_fields([item.model_dump() for item in body.fields])),
         created_by=user.id,
     )
@@ -316,6 +380,8 @@ async def update_form(
         form.email_subject = body.email_subject.strip()[:160]
     if body.email_body is not None:
         form.email_body = body.email_body.strip()[:4000]
+    if body.collect is not None:
+        form.collect_json = json.dumps([key for key in body.collect if key in PROFILE_FIELDS])
     if body.slip is not None and _owns(user, form):
         form.slip_json = json.dumps(body.slip.model_dump())
     if not form.public_code:
@@ -522,7 +588,14 @@ async def open_form(form_id: int, user: Annotated[User, Depends(get_current_user
         await db.scalar(select(func.count()).select_from(FormResponse).where(FormResponse.form_id == form.id, FormResponse.user_id == user.id))
         or 0
     )
-    return _public_form(form, used=used)
+    payload = _public_form(form, used=used)
+    values = _profile_values(user)
+    payload["profile"] = [
+        {"key": key, "label": PROFILE_FIELDS[key], "value": values.get(key) or "Not on the account"}
+        for key in _collect(form)
+    ]
+    payload["profile_notice"] = "These details come from your signed-in account and will be stored with this response."
+    return payload
 
 
 def _read_answers(form: ServiceForm, answers: dict) -> tuple[dict, list[str]]:
@@ -589,6 +662,7 @@ async def submit_form(
     if form.response_limit and used >= form.response_limit:
         raise HTTPException(status_code=400, detail="You have already used the responses allowed for this service")
     stored, lines = _read_answers(form, body.answers)
+    _attach_profile(form, user, stored, lines)
     identity = user.student.student_id if user.student else user.username
     response = FormResponse(form_id=form.id, user_id=user.id, answers_json=json.dumps(stored))
     db.add(response)
@@ -622,7 +696,11 @@ async def response_sheet(number: str, user: Annotated[User, Depends(get_current_
         "name": response.guest_name or (person.full_name if person else ""),
         "status": ack.status,
         "slip": _slip(form) if form else {},
-        "fields": [{"label": field["label"], "value": answers.get(field["key"], "")} for field in fields],
+        "fields": [
+            {"label": PROFILE_FIELDS[key.split(":", 1)[1]], "value": value}
+            for key, value in answers.items()
+            if key.startswith("profile:") and key.split(":", 1)[1] in PROFILE_FIELDS
+        ] + [{"label": field["label"], "value": answers.get(field["key"], "")} for field in fields],
     }
 
 
@@ -761,7 +839,8 @@ async def result_forms(user: Annotated[User, Depends(get_current_user)], db: Ann
 
 def _table(form: ServiceForm, rows: list[FormResponse], people: dict) -> tuple[list[str], list[list[str]]]:
     fields = json.loads(form.fields_json or "[]")
-    header = ["Acknowledgement", "Name", "Identity", *[field["label"] for field in fields]]
+    collected = _collect(form)
+    header = ["Acknowledgement", "Name", "Identity", *[PROFILE_FIELDS[key] for key in collected], *[field["label"] for field in fields]]
     body = []
     for row in rows:
         person = people.get(row.user_id)
@@ -771,6 +850,7 @@ def _table(form: ServiceForm, rows: list[FormResponse], people: dict) -> tuple[l
                 row.ack_number,
                 row.guest_name or (person.full_name if person else ""),
                 row.guest_email or (person.student.student_id if person and person.student else (person.username if person else "")),
+                *[str(answers.get(f"profile:{key}") or "") for key in collected],
                 *[str(answers.get(field["key"]) or "") for field in fields],
             ]
         )

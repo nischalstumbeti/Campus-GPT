@@ -11,6 +11,19 @@ type Answer = { id: number; name: string; identity: string; answers: Record<stri
 type Layout = { kind: string; institution: string; document_title: string; subtitle: string; footer: string; signatory: string; signatory_title: string };
 
 const EMPTY_FIELD: Field = { label: "", type: "text", required: true, options: "", show_if: "" };
+const ACCOUNT_FIELDS = [
+  ["name", "Name"],
+  ["email", "Email"],
+  ["register_or_employee", "Register number or employee id"],
+  ["program", "Programme"],
+  ["department", "Department"],
+  ["batch", "Batch"],
+  ["section", "Section"],
+  ["semester", "Semester"],
+  ["designation", "Designation"],
+  ["school", "School"],
+  ["abc_id", "ABC ID"],
+] as const;
 
 export default function FormDesk({ manageLayout = false }: { manageLayout?: boolean }) {
   const [items, setItems] = useState<Service[]>([]);
@@ -34,6 +47,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
   const [redirectUrl, setRedirectUrl] = useState("");
   const [slipTitle, setSlipTitle] = useState("FORM ACKNOWLEDGEMENT");
   const [slipSign, setSlipSign] = useState("");
+  const [collect, setCollect] = useState<string[]>(["name", "email", "register_or_employee"]);
 
   const load = () => {
     apiFetch<{ items: Service[] }>("/api/v1/forms")
@@ -60,6 +74,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
           audience,
           response_limit: Number(limit),
           is_open: false,
+          collect: audience === "open" ? [] : collect,
           fields: fields.filter((field) => field.label.trim()),
         }),
       });
@@ -147,6 +162,18 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
                 <option value="open">Open link, no CIMS account</option>
               </select>
             </label>
+            <div className="md:col-span-2 rounded border border-slate-200 p-3">
+              <p className="text-sm font-medium text-[#0B2A4A]">Account details collected with each response</p>
+              <p className="mt-1 text-xs text-slate-500">Name, email, and register or employee id are selected. They are copied from the signed-in account. The person sees this list before submitting. Phone is not on the campus account, so add it as a question if you need it. An open link has no account, so these boxes do not apply there.</p>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {ACCOUNT_FIELDS.map(([key, label]) => (
+                  <label key={key} className="text-sm flex items-center gap-1">
+                    <input type="checkbox" checked={collect.includes(key)} disabled={audience === "open"} onChange={(e) => setCollect(e.target.checked ? [...collect, key] : collect.filter((item) => item !== key))} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
             <label className="text-xs text-slate-500">Responses allowed for one identity (0 = no limit)
               <input type="number" min={0} max={20} className="mt-1 w-full border rounded px-2 py-1 text-sm" value={limit} onChange={(e) => setLimit(e.target.value)} />
             </label>
@@ -218,7 +245,7 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
             <div className="flex flex-wrap gap-2">
               <button type="button" className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm" onClick={share}>Save who can respond</button>
               <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={async () => {
-                await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ is_open: true, audience }) });
+                await apiFetch(`/api/v1/forms/desk/${selected}`, { method: "PATCH", body: JSON.stringify({ is_open: true, audience, collect: audience === "open" ? [] : collect }) });
                 setMsg(audience === "open" ? "Published. Share the open link from Form results." : "Published to signed-in CIMS users.");
                 load();
               }}>Publish</button>

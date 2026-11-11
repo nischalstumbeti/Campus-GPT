@@ -7,7 +7,7 @@ import FormFill, { FillField } from "@/components/FormFill";
 import { apiFetch } from "@/lib/api";
 
 type Item = { id: number; title: string; instructions: string; response_limit: number; used: number; remaining: number | null };
-type OpenForm = Item & { fields: FillField[]; confirmation?: string; redirect_url?: string };
+type OpenForm = Item & { fields: FillField[]; confirmation?: string; redirect_url?: string; profile?: { label: string; value: string }[]; profile_notice?: string };
 
 export default function StudentFormsPage() {
   const [items, setItems] = useState<Item[]>([]);
@@ -84,6 +84,17 @@ export default function StudentFormsPage() {
             <form onSubmit={submit} className="space-y-3">
               <h2 className="font-semibold text-[#0B2A4A]">{current.title}</h2>
               {current.instructions ? <p className="text-sm whitespace-pre-wrap text-slate-600">{current.instructions}</p> : null}
+              {current.profile?.length ? (
+                <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm">
+                  <p className="font-medium text-[#0B2A4A]">Taken from your account</p>
+                  <p className="text-xs text-slate-600 mt-1">{current.profile_notice}</p>
+                  <dl className="mt-2 space-y-1">
+                    {current.profile.map((item) => (
+                      <div key={item.label} className="flex justify-between gap-3"><dt>{item.label}</dt><dd className="font-medium">{item.value}</dd></div>
+                    ))}
+                  </dl>
+                </div>
+              ) : null}
               <FormFill fields={current.fields} answers={answers} onChange={(key, value) => setAnswers({ ...answers, [key]: value })} uploadPath={`/api/v1/forms/open/${current.id}/file`} />
               <div className="flex gap-2">
                 <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Submit</button>

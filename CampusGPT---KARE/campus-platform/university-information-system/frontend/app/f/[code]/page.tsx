@@ -43,6 +43,7 @@ export default function PublicFormPage({ params }: { params: { code: string } })
         {form && !done ? (
           <>
             {form.instructions ? <p className="text-sm whitespace-pre-wrap text-slate-600">{form.instructions}</p> : null}
+            <p className="text-xs text-slate-500">This link is open, so your name and email are what you type here. Campus account details such as register number are not attached.</p>
             <label className="block text-xs text-slate-500">Your name<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={name} onChange={(e) => setName(e.target.value)} /></label>
             <label className="block text-xs text-slate-500">Email<input type="email" className="mt-1 w-full border rounded px-2 py-1 text-sm" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
             <FormFill fields={form.fields} answers={answers} onChange={(key, value) => setAnswers({ ...answers, [key]: value })} uploadPath={`/api/v1/forms/public/${params.code}/file`} />

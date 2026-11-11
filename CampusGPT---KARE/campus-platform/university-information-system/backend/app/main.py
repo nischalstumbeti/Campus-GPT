@@ -341,6 +341,7 @@ async def _ensure_form_extras(conn):
             "email_body": "ALTER TABLE service_forms ADD COLUMN email_body TEXT DEFAULT ''",
             "slip_json": "ALTER TABLE service_forms ADD COLUMN slip_json TEXT DEFAULT '{}'",
             "public_code": "ALTER TABLE service_forms ADD COLUMN public_code VARCHAR(32) DEFAULT ''",
+            "collect_json": "ALTER TABLE service_forms ADD COLUMN collect_json TEXT DEFAULT '[]'",
         }
         for column, statement in alters.items():
             if column not in forms:
