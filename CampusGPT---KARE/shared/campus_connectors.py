@@ -57,14 +57,14 @@ _PROVIDERS: list[dict[str, Any]] = [
         "id": "smtp",
         "label": "Email (SMTP)",
         "kind": "email",
-        "summary": "SMTP host, mailbox, and app password. Takes effect without a restart.",
+        "summary": "Alerts use this Gmail mailbox only: 99230041300@klu.ac.in. Host smtp.gmail.com, port 587, and a Google app password. Save it, then test. Every slip and alert uses this mailbox.",
         "fields": [
             {"key": "enabled", "label": "Enabled", "type": "bool", "env": "EMAIL_ENABLED", "default": True},
             {"key": "host", "label": "SMTP host", "type": "text", "env": "SMTP_HOST", "required": True, "default": "smtp.gmail.com"},
             {"key": "port", "label": "SMTP port", "type": "number", "env": "SMTP_PORT", "required": True, "default": 587},
-            {"key": "user", "label": "SMTP user", "type": "text", "env": "SMTP_USER", "required": True, "placeholder": "you@gmail.com"},
-            {"key": "password", "label": "App password", "type": "password", "env": "SMTP_PASSWORD", "secret": True, "required": True},
-            {"key": "from_header", "label": "From header", "type": "text", "env": "SMTP_FROM", "placeholder": "Campus <you@gmail.com>"},
+            {"key": "user", "label": "SMTP user", "type": "text", "env": "SMTP_USER", "required": True, "placeholder": "99230041300@klu.ac.in", "default": "99230041300@klu.ac.in"},
+            {"key": "password", "label": "Google app password", "type": "password", "env": "SMTP_PASSWORD", "secret": True, "required": True, "placeholder": "16-character app password"},
+            {"key": "from_header", "label": "From header", "type": "text", "env": "SMTP_FROM", "placeholder": "KARE UIS <99230041300@klu.ac.in>", "default": "KARE UIS <99230041300@klu.ac.in>"},
         ],
     },
 ]

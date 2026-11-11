@@ -58,7 +58,11 @@ function sanitize(html: string) {
     .replace(/<\/?([a-z0-9]+)[^>]*>/gi, (tag, name) => {
       let kept = String(name).toLowerCase();
       if (kept === "font") kept = "span";
-      if (!["b", "strong", "i", "em", "u", "br", "p", "div", "span", "h1", "h2", "h3", "ul", "ol", "li"].includes(kept)) return "";
+      if (!["b", "strong", "i", "em", "u", "br", "p", "div", "span", "h1", "h2", "h3", "ul", "ol", "li", "img"].includes(kept)) return "";
+      if (kept === "img") {
+        const src = tag.match(/src=["'](https:\/\/[^"']+)/i)?.[1];
+        return src ? `<img src="${src}" alt="" style="max-width:80mm;height:auto">` : "";
+      }
       if (kept === "br") return "<br>";
       if (tag.startsWith("</")) return `</${kept}>`;
       const style = safeStyle(tag);
@@ -158,6 +162,13 @@ export function SlipPaper({
           <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => run("justifyLeft")}>Left</button>
           <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => run("justifyCenter")}>Center</button>
           <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => run("justifyRight")}>Right</button>
+          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => {
+            const url = window.prompt("Image address, starting with https://");
+            if (!url || !/^https:\/\//i.test(url)) return;
+            const html = `<img src="${url.replace(/"/g, "")}" alt="" style="max-width:80mm;height:auto">`;
+            if (htmlMode) wrapHtml(html, "");
+            else run("insertHTML", html);
+          }}>Image</button>
           <label className="text-xs text-slate-500">Page
             <select className="ml-1 border rounded px-1 py-1 text-sm" value={pageKey} onChange={(e) => set({ page_size: e.target.value })}>
               {Object.entries(PAGES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}

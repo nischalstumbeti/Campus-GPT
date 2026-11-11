@@ -901,6 +901,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    username: Optional[str] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
     role: Optional[str] = None
@@ -1447,6 +1448,15 @@ async def update_user(
     data = body.model_dump(exclude_unset=True)
     if "password" in data:
         target.hashed_password = hash_password(data.pop("password"))
+    if "username" in data and data["username"] is not None:
+        username = data.pop("username").strip()
+        if len(username) < 3:
+            raise HTTPException(status_code=400, detail="User ID must be at least 3 characters")
+        if username != target.username:
+            taken = (await db.execute(select(User).where(User.username == username, User.id != target.id))).scalar_one_or_none()
+            if taken:
+                raise HTTPException(status_code=400, detail="That user ID is already used")
+            target.username = username
     if "role" in data and data["role"] not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
     student_data = {key: data.pop(key) for key in list(data) if key in STUDENT_EDIT_FIELDS}

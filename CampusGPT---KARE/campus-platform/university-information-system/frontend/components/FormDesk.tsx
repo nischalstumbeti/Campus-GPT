@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { confirmPhrase } from "@/lib/confirm";
@@ -25,6 +25,41 @@ const ACCOUNT_FIELDS = [
   ["school", "School"],
   ["abc_id", "ABC ID"],
 ] as const;
+
+function EmailNote({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const seen = useRef("");
+  useEffect(() => {
+    if (!ref.current || document.activeElement === ref.current || seen.current === value) return;
+    ref.current.innerHTML = value || "";
+    seen.current = value;
+  }, [value]);
+  const run = (command: string) => {
+    ref.current?.focus();
+    document.execCommand(command);
+    seen.current = ref.current?.innerHTML || "";
+    onChange(seen.current);
+  };
+  return (
+    <div className="mt-1">
+      <div className="mb-1 flex gap-1">
+        <button type="button" className="rounded border px-2 py-0.5 text-xs font-bold" onClick={() => run("bold")}>Bold</button>
+        <button type="button" className="rounded border px-2 py-0.5 text-xs italic" onClick={() => run("italic")}>Italic</button>
+        <button type="button" className="rounded border px-2 py-0.5 text-xs underline" onClick={() => run("underline")}>Underline</button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        className="min-h-24 w-full rounded border bg-white px-2 py-1 text-sm"
+        onBlur={(e) => {
+          seen.current = e.currentTarget.innerHTML;
+          onChange(e.currentTarget.innerHTML);
+        }}
+      />
+    </div>
+  );
+}
 
 export default function FormDesk({ manageLayout = false }: { manageLayout?: boolean }) {
   const [items, setItems] = useState<Service[]>([]);
@@ -335,7 +370,10 @@ export default function FormDesk({ manageLayout = false }: { manageLayout?: bool
                   <option value="none">Do not email</option>
                 </select>
               </label>
-              <label className="text-xs text-slate-500">Message text<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} /></label>
+              <label className="text-xs text-slate-500 md:col-span-2">Email message
+                <span className="mt-1 block text-[11px] text-slate-400">Same kind of page as the slip. Bold and italic are kept. The mailbox on Connections sends it.</span>
+                <EmailNote value={emailBody} onChange={setEmailBody} />
+              </label>
               <label className="text-xs text-slate-500">On-screen confirmation<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>
               <label className="text-xs text-slate-500">Destination link<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={redirectUrl} onChange={(e) => setRedirectUrl(e.target.value)} /></label>
               <p className="text-xs text-slate-500 md:col-span-2">Edit this form’s slip on the page below. The printed acknowledgement uses that page.</p>

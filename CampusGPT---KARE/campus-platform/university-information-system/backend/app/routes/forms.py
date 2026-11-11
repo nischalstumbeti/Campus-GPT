@@ -74,7 +74,7 @@ LAYOUTS = {
     "complaint": ("COMPLAINT RECEIPT", "Dean, Student Affairs", "Office of the Dean (Student Affairs)", True),
 }
 _TAG = re.compile(r"</?\s*([a-zA-Z0-9]+)[^>]*>")
-_KEEP = {"b", "strong", "i", "em", "u", "br", "p", "div", "span", "h1", "h2", "h3", "ul", "ol", "li"}
+_KEEP = {"b", "strong", "i", "em", "u", "br", "p", "div", "span", "h1", "h2", "h3", "ul", "ol", "li", "img"}
 _FONTS = {"Georgia", "Times New Roman", "Arial", "Calibri", "Courier New", "Verdana"}
 _PAGES = {"a4", "a5", "letter", "legal"}
 _ORIENTATIONS = {"portrait", "landscape"}
@@ -125,6 +125,11 @@ def _clean_body(raw: str) -> str:
             tag = "span"
         if tag not in _KEEP:
             return ""
+        if tag == "img":
+            src = re.search(r"""src\s*=\s*['"](https://[^'"]+)""", match.group(0), re.I)
+            if not src:
+                return ""
+            return f'<img src="{src.group(1)}" alt="" style="max-width:80mm;height:auto">'
         if tag == "br":
             return "<br>"
         if match.group(0).startswith("</"):
@@ -475,7 +480,7 @@ async def create_form(body: FormIn, user: Annotated[User, Depends(Staff)], db: A
         redirect_url=body.redirect_url.strip()[:500],
         email_mode=mode,
         email_subject=body.email_subject.strip()[:160],
-        email_body=body.email_body.strip()[:4000],
+        email_body=_clean_body(body.email_body)[:4000],
         slip_json=_stored_slip(body.slip),
         public_code=secrets.token_urlsafe(8),
         collect_json=json.dumps([key for key in body.collect if key in PROFILE_FIELDS]),
@@ -518,7 +523,7 @@ async def update_form(
     if body.email_subject is not None:
         form.email_subject = body.email_subject.strip()[:160]
     if body.email_body is not None:
-        form.email_body = body.email_body.strip()[:4000]
+        form.email_body = _clean_body(body.email_body)[:4000]
     if body.allow_edit is not None:
         form.allow_edit = body.allow_edit
     if body.issue_ack is not None:
@@ -833,8 +838,8 @@ async def _finish(db, form, response, user, email, identity, lines):
     mode = form.email_mode or "acknowledgement"
     if not form.issue_ack:
         if mode == "message" and email:
-            note = form.email_body or "Your response has been recorded."
-            await send_email(email, form.email_subject or form.title, f"<p>{note}</p>", text_body=note)
+            note = _clean_body(form.email_body) or "Your response has been recorded."
+            await send_email(email, form.email_subject or form.title, note, text_body=note)
         return {"number": "", "title": form.title, "email": email or "", "email_sent": False, "status": "recorded", "link": ""}
     ack = await issue_acknowledgement(
         db,
@@ -848,8 +853,8 @@ async def _finish(db, form, response, user, email, identity, lines):
         notify_kind="form",
     )
     if mode == "message" and email:
-        note = form.email_body or "Your response has been recorded."
-        await send_email(email, form.email_subject or form.title, f"<p>{note}</p><p>Acknowledgement {ack['number']}</p>", text_body=f"{note}\n{ack['number']}")
+        note = _clean_body(form.email_body) or "Your response has been recorded."
+        await send_email(email, form.email_subject or form.title, f"{note}<p>Acknowledgement {ack['number']}</p>", text_body=f"{note}\n{ack['number']}")
     return ack
 
 

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, apiUpload } from "@/lib/api";
 
-type RoleOption = { value: string; label: string };
+type RoleOption = { value: string; label: string; privilege?: string };
 
 export type EditableUser = {
   id: number;
@@ -40,6 +40,8 @@ type Props = {
 
 export default function UserEditor({ userId, roles, busy, onClose, onSaved, onError }: Props) {
   const [detail, setDetail] = useState<EditableUser | null>(null);
+  const [password, setPassword] = useState("");
+  const [passwordAgain, setPasswordAgain] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
 
@@ -70,6 +72,7 @@ export default function UserEditor({ userId, roles, busy, onClose, onSaved, onEr
     e.preventDefault();
     if (!detail) return;
     const body: Record<string, unknown> = {
+      username: detail.username.trim(),
       email: detail.email.trim(),
       full_name: detail.full_name.trim(),
       role: detail.role,
@@ -89,6 +92,13 @@ export default function UserEditor({ userId, roles, busy, onClose, onSaved, onEr
       body.semester = detail.semester;
       body.section = detail.section;
       body.batch = detail.batch;
+    }
+    if (password || passwordAgain) {
+      if (password.length < 6 || password !== passwordAgain) {
+        onError("Enter the new password twice. It must be at least 6 characters.");
+        return;
+      }
+      body.password = password;
     }
     try {
       await apiFetch(`/api/v1/admin/users/${detail.id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -156,6 +166,10 @@ export default function UserEditor({ userId, roles, busy, onClose, onSaved, onEr
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="text-sm">
+                <span className="text-slate-600">User ID</span>
+                <input required minLength={3} value={detail.username} onChange={(e) => set({ username: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
+              </label>
+              <label className="text-sm">
                 <span className="text-slate-600">Full name</span>
                 <input required value={detail.full_name} onChange={(e) => set({ full_name: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
               </label>
@@ -173,6 +187,7 @@ export default function UserEditor({ userId, roles, busy, onClose, onSaved, onEr
                     </option>
                   ))}
                 </select>
+                <span className="mt-1 block text-xs text-slate-500">{roles.find((item) => item.value === detail.role)?.privilege || "This role keeps the privileges already built for it."}</span>
               </label>
               <label className="text-sm">
                 <span className="text-slate-600">Department</span>
@@ -193,6 +208,14 @@ export default function UserEditor({ userId, roles, busy, onClose, onSaved, onEr
               <label className="text-sm">
                 <span className="text-slate-600">Block / cabin</span>
                 <input value={detail.cabin_block} onChange={(e) => set({ cabin_block: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
+              </label>
+              <label className="text-sm">
+                <span className="text-slate-600">New password</span>
+                <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep the current password" className="mt-1 w-full rounded-lg border px-3 py-2" />
+              </label>
+              <label className="text-sm">
+                <span className="text-slate-600">Repeat password</span>
+                <input type="password" autoComplete="new-password" value={passwordAgain} onChange={(e) => setPasswordAgain(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
               </label>
             </div>
             {detail.student_id ? (

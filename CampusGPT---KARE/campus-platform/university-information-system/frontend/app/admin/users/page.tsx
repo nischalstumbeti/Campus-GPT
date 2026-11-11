@@ -399,6 +399,7 @@ export default function AdminUsersPage() {
                 </option>
               ))}
             </select>
+            <span className="mt-1 block text-xs text-slate-500">{ROLES.find((item) => item.value === form.role)?.privilege}</span>
           </label>
           <label className="block">
             <span className="text-xs text-slate-500">{form.role === "student" ? "Register number" : "User ID"}</span>
