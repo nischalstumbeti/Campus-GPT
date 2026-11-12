@@ -141,7 +141,7 @@ export default function CopilotShell({
           <BrandLogo size={32} />
           <div>
             <p className="font-bold text-sm text-primary leading-tight">{branding.app_name || "Campus-GPT"}</p>
-            <p className="text-[10px] text-gray-500">KARE AI companion</p>
+            <p className="text-[10px] text-gray-500">{branding.tagline || "KARE AI companion"}</p>
           </div>
         </Link>
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5" aria-label="Main">

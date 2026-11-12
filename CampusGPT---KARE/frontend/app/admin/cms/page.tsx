@@ -244,6 +244,14 @@ function CmsInner() {
                   onChange={(e) => setBranding({ ...branding, app_name: e.target.value })}
                 />
               </label>
+              <label className="block text-sm">
+                <span className="text-xs text-gray-500">Line under the name</span>
+                <input
+                  className="mt-1 w-full border rounded-xl px-3 py-2 text-sm"
+                  value={branding.tagline || ""}
+                  onChange={(e) => setBranding({ ...branding, tagline: e.target.value })}
+                />
+              </label>
               <div className="flex items-center gap-3">
                 {branding.logo_url ? (
                   <img src={branding.logo_url} alt="" className="h-14 w-14 object-contain rounded border bg-white" />

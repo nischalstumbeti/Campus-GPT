@@ -28,6 +28,7 @@ class BrandingSettings(Base):
     login_background_url = Column(Text, default="")
     logo_url = Column(Text, default="")
     app_name = Column(String(120), default="Campus-GPT")
+    tagline = Column(String(160), default="KARE AI companion")
     updated_by = Column(String(64), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -49,4 +50,5 @@ DEFAULT_BRANDING = {
     "login_background_url": "",
     "logo_url": "",
     "app_name": "Campus-GPT",
+    "tagline": "KARE AI companion",
 }

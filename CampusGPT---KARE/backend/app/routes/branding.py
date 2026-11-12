@@ -46,6 +46,7 @@ def _ser(row: BrandingSettings | None) -> dict:
         "login_background_url": row.login_background_url or "",
         "logo_url": row.logo_url or "",
         "app_name": row.app_name or DEFAULT_BRANDING["app_name"],
+        "tagline": row.tagline or DEFAULT_BRANDING["tagline"],
         "updated_by": row.updated_by,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -77,6 +78,7 @@ class BrandingIn(BaseModel):
     login_background_url: Optional[str] = None
     logo_url: Optional[str] = None
     app_name: Optional[str] = Field(default=None, max_length=120)
+    tagline: Optional[str] = Field(default=None, max_length=160)
 
 
 @router.get("/branding")

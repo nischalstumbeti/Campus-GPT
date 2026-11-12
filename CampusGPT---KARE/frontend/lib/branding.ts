@@ -15,6 +15,7 @@ export type Branding = {
   login_background_url: string;
   logo_url: string;
   app_name: string;
+  tagline: string;
   updated_at?: string | null;
   updated_by?: string | null;
 };
@@ -35,6 +36,7 @@ export const DEFAULT_BRANDING: Branding = {
   login_background_url: "",
   logo_url: "",
   app_name: "Campus-GPT",
+  tagline: "KARE AI companion",
 };
 
 export function applyBrandingToDocument(b: Branding) {
