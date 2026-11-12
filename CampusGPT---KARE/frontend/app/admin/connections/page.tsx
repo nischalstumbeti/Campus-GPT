@@ -85,8 +85,12 @@ function ConnectionsInner() {
       });
   }, []);
 
-  const stores = useMemo(() => (catalog?.providers || []).filter((p) => p.kind !== "email"), [catalog]);
+  const stores = useMemo(
+    () => (catalog?.providers || []).filter((p) => p.kind === "database" || p.kind === "storage"),
+    [catalog]
+  );
   const smtp = catalog?.providers.find((p) => p.id === "smtp");
+  const gemini = catalog?.providers.find((p) => p.id === "gemini");
   const current = stores.find((p) => p.id === selected) || stores[0];
 
   const setField = (providerId: string, key: string, value: string | boolean) => {
@@ -252,6 +256,47 @@ function ConnectionsInner() {
                   className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-60"
                 >
                   {busy === "save-mail" ? "Saving…" : "Save email settings"}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {gemini && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h2 className="text-base font-semibold text-slate-800">Gemini for answers</h2>
+            <p className="text-sm text-slate-600 mt-1">{gemini.summary}</p>
+            <div className="mt-4 space-y-4">
+              {renderFields(gemini)}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() =>
+                    run("test-gemini", () =>
+                      apiPost("/api/admin/integrations/gemini/test", {
+                        values: valuesFrom(gemini, drafts.gemini || {}),
+                      })
+                    )
+                  }
+                  className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium disabled:opacity-60"
+                >
+                  {busy === "test-gemini" ? "Testing…" : "Test Gemini"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() =>
+                    run("save-gemini", () =>
+                      apiPut("/api/admin/integrations/gemini", {
+                        values: valuesFrom(gemini, drafts.gemini || {}),
+                        make_active: false,
+                      })
+                    )
+                  }
+                  className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-60"
+                >
+                  {busy === "save-gemini" ? "Saving…" : "Save Gemini key"}
                 </button>
               </div>
             </div>

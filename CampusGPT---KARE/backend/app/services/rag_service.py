@@ -35,11 +35,23 @@ def _is_internet_issue(exc: BaseException) -> bool:
     return any(t in msg for t in tokens)
 
 
+def _live_settings():
+    return get_settings()
+
+
+def reset_gemini() -> None:
+    """Drop the cached client after an admin saves a new Gemini key."""
+    global _genai, _resolved_chat_model
+    _genai = None
+    _resolved_chat_model = None
+
+
 def _get_genai():
     global _genai
-    if _genai is None and settings.GEMINI_API_KEY:
+    key = (_live_settings().GEMINI_API_KEY or "").strip()
+    if _genai is None and key:
         import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        genai.configure(api_key=key)
         _genai = genai
     return _genai
 
@@ -57,7 +69,7 @@ _resolved_chat_model: str | None = None
 
 
 def _chat_model_candidates() -> list[str]:
-    primary = (settings.GEMINI_CHAT_MODEL or "").strip()
+    primary = (_live_settings().GEMINI_CHAT_MODEL or "").strip()
     out: list[str] = []
     if primary:
         out.append(primary)
@@ -128,7 +140,11 @@ Style rules (important):
 3. For large structured data (timetable, attendance, marks, faculty schedule), keep the pipe table from context exactly — do not flatten it into a clumsy paragraph.
 4. Use only facts from the context. Never invent marks, attendance, roll numbers, fees, or dates.
 5. If the record is missing, say so plainly and suggest the right office (Academic Office, Hostel Warden, or Accounts).
-6. When leave has already been submitted by the system, confirm the details plainly without inventing a new request."""
+6. When leave has already been submitted by the system, confirm the details plainly without inventing a new request.
+7. Refuse cheating, impersonation, hacking, harassment, fake attendance, leaked papers, and any request to bypass campus rules.
+8. Never change a measured figure. If a number is not in the evidence, say it was not measured.
+9. Do not reveal another person's private marks, attendance, password, or contact details. Campus-wide counts are allowed.
+10. If the evidence is not enough, name the gap and the office that can confirm it. A short correct answer is better than a full guess."""
 
 
 async def retrieve_context(query: str, top_k: int = None) -> tuple[list[str], list[dict], float]:
@@ -168,6 +184,7 @@ async def generate_response(
     agent_type: str = "general",
     long_term_memory: str = "",
     db=None,
+    extra_context: str = "",
 ) -> tuple[str, float, list[dict]]:
     """Generate response using Gemini with context."""
     genai = _get_genai()
@@ -202,7 +219,7 @@ async def generate_response(
         except Exception:
             campus_brief = ""
 
-    if not context and not history_block and not long_term_memory and not campus_brief:
+    if not context and not history_block and not long_term_memory and not campus_brief and not (extra_context or "").strip():
         return (
             "I don't have enough verified information to answer that accurately. "
             "For academics (timetable, attendance, marks, faculty) ask from the Campus tools or contact the Academic Office. "
@@ -225,6 +242,9 @@ Recent discussion (this chat):
 Context from knowledge base and academic database:
 {context or "(none)"}
 
+Measured campus evidence (copy these figures exactly; do not round or replace them):
+{extra_context or "(none)"}
+
 User question: {query}
 
 Answer PRECISELY in plain normal text (no markdown). Prefer academic-database facts for timetable, attendance, marks, faculty, and planning.
@@ -244,6 +264,13 @@ If a personal academic record is missing, say so — do not invent numbers."""
         import logging
 
         logging.getLogger(__name__).warning("Gemini generate failed: %s", e)
+        if (agent_type or "").lower() == "admin":
+            evidence = (extra_context or context or "").strip()
+            return (
+                evidence[:1600] or "The model could not write this answer, and there is no measured evidence to show.",
+                0.4,
+                [{"source": "Measured campus records", "excerpt": evidence[:180]}],
+            )
         if _is_internet_issue(e) and not context_chunks:
             return (
                 "Internet issue. Check your connection and try again.",
@@ -279,6 +306,7 @@ async def rag_pipeline(
     agent_type: str = "general",
     db=None,
     user: dict | None = None,
+    extra_context: str = "",
 ) -> dict:
     """Full RAG pipeline: retrieve -> generate -> return. Uses demo mode if no API key."""
     from app.services.academic_service import detect_academic_intent
@@ -583,7 +611,7 @@ async def rag_pipeline(
             **extras,
         }
 
-    if not settings.GEMINI_API_KEY:
+    if not (_live_settings().GEMINI_API_KEY or "").strip():
         if academic_context and intent_name not in ("knowledge", "greeting"):
             return {
                 "answer": academic_context,
@@ -618,6 +646,7 @@ async def rag_pipeline(
         agent_type=agent_type,
         long_term_memory=long_term_memory,
         db=db,
+        extra_context=extra_context,
     )
 
     if academic_context:

@@ -11,7 +11,8 @@ BLOCKED_PATTERNS = [
     "ignore previous", "ignore all", "forget your", "pretend you", "act as if",
     "you are now", "new instructions", "jailbreak",
     # Inappropriate content
-    "how to hack", "how to cheat on exam",
+    "how to hack", "how to cheat on exam", "write my exam", "leak the question paper",
+    "question paper leak", "fake attendance", "bypass attendance", "impersonate a student",
 ]
 
 # Minimum meaningful length

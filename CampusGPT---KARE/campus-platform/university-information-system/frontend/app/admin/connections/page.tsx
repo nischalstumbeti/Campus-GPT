@@ -83,7 +83,10 @@ export default function ConnectionsPage() {
       });
   }, []);
 
-  const stores = useMemo(() => (catalog?.providers || []).filter((p) => p.kind !== "email"), [catalog]);
+  const stores = useMemo(
+    () => (catalog?.providers || []).filter((p) => p.kind === "database" || p.kind === "storage"),
+    [catalog]
+  );
   const smtp = catalog?.providers.find((p) => p.id === "smtp");
   const current = stores.find((p) => p.id === selected) || stores[0];
 

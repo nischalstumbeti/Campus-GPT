@@ -51,6 +51,16 @@ def _apply(provider: str, cfg: dict) -> None:
         settings.S3_BUCKET = str(cfg.get("bucket") or "")
         settings.S3_ACCESS_KEY = str(cfg.get("access_key") or "")
         settings.S3_SECRET_KEY = str(cfg.get("secret_key") or "")
+    elif provider == "gemini":
+        settings.GEMINI_API_KEY = str(cfg.get("api_key") or "").strip()
+        if str(cfg.get("model") or "").strip():
+            settings.GEMINI_CHAT_MODEL = str(cfg.get("model")).strip()
+        try:
+            from app.services.rag_service import reset_gemini
+
+            reset_gemini()
+        except Exception:
+            pass
 
 
 hub = IntegrationHub(

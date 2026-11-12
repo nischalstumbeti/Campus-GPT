@@ -50,6 +50,7 @@ const FACULTY: Item[] = [
 
 const ADMIN: Item[] = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/insight", label: "Thinking" },
   { href: "/admin/connections", label: "Connections" },
   { href: "/admin/cms", label: "Admin CMS" },
   { href: "/admin/observability", label: "Observability" },

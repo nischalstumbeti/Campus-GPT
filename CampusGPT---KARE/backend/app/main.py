@@ -47,6 +47,12 @@ async def lifespan(app: FastAPI):
         print("WARNING: using default SECRET_KEY — set SECRET_KEY for any shared/deployed environment")
 
     await init_db()
+    try:
+        from app.services.connectors import hub
+
+        hub.apply_all()
+    except Exception as exc:
+        print(f"Connector settings were not applied: {exc}")
     from app.services.supabase_storage import ensure_bucket
     try:
         bucket = await ensure_bucket()

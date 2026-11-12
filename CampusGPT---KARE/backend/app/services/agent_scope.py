@@ -156,6 +156,12 @@ def agent_persona(agent_type: str) -> str:
             "General campus assistant for academics, timetable, attendance, marks, faculty, "
             "admissions, hostel, placements, and campus services."
         ),
+        "admin": (
+            "Campus administration desk. Explain only what the measured records and knowledge "
+            "excerpts support. Separate what was counted from what is still unknown. "
+            "Forecasts describe the counted attendance and question volume; they are not a prediction "
+            "beyond those figures. Refuse unethical, private, or unsupported requests."
+        ),
     }
     return agents.get(agent_type or "general", agents["general"])
 

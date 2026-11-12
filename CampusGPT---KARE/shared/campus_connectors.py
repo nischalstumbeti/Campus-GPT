@@ -67,7 +67,21 @@ _PROVIDERS: list[dict[str, Any]] = [
             {"key": "from_header", "label": "From header", "type": "text", "env": "SMTP_FROM", "placeholder": "KARE UIS <99230041300@klu.ac.in>", "default": "KARE UIS <99230041300@klu.ac.in>"},
         ],
     },
+    {
+        "id": "gemini",
+        "label": "Gemini",
+        "kind": "ai",
+        "summary": "Campus-GPT uses this key for retrieval answers, admin thinking, and forecasts. The model may use only campus records and knowledge excerpts. It must refuse unethical requests and say when a figure was not measured.",
+        "fields": [
+            {"key": "api_key", "label": "Gemini API key", "type": "password", "env": "GEMINI_API_KEY", "secret": True, "required": True, "placeholder": "Paste the key from Google AI Studio"},
+            {"key": "model", "label": "Chat model", "type": "text", "env": "GEMINI_CHAT_MODEL", "default": "gemini-flash-latest", "placeholder": "gemini-flash-latest"},
+        ],
+    },
 ]
+
+
+def _is_data_store(kind: str) -> bool:
+    return kind in {"database", "storage"}
 
 _BY_ID = {p["id"]: p for p in _PROVIDERS}
 
@@ -179,10 +193,10 @@ class IntegrationHub:
 
     def active(self) -> str:
         stored = (self._read_store().get("active") or "").strip()
-        if stored in _BY_ID and _BY_ID[stored]["kind"] != "email":
+        if stored in _BY_ID and _is_data_store(_BY_ID[stored]["kind"]):
             return stored
         env_active = read_env(self.env_path).get("ACTIVE_DATA_STORE", "").strip()
-        if env_active in _BY_ID and _BY_ID[env_active]["kind"] != "email":
+        if env_active in _BY_ID and _is_data_store(_BY_ID[env_active]["kind"]):
             return env_active
         return ""
 
@@ -255,11 +269,11 @@ class IntegrationHub:
         data = self._read_store()
         data.setdefault("providers", {})[provider_id] = merged
         spec = _BY_ID[provider_id]
-        if make_active and spec["kind"] != "email":
+        if make_active and _is_data_store(spec["kind"]):
             data["active"] = provider_id
         self._write_store(data)
         env_updates = {field["env"]: merged.get(field["key"], "") for field in spec["fields"]}
-        if spec["kind"] != "email" and (make_active or self.active() == provider_id):
+        if _is_data_store(spec["kind"]) and (make_active or self.active() == provider_id):
             env_updates["ACTIVE_DATA_STORE"] = provider_id
             data["active"] = provider_id
             self._write_store(data)
@@ -286,7 +300,7 @@ class IntegrationHub:
     def open_client(self, provider_id: str | None = None) -> Any:
         """Open the active data store, or a named one. SMTP is not a client."""
         chosen = provider_id or self.active()
-        if chosen not in _BY_ID or _BY_ID[chosen]["kind"] == "email":
+        if chosen not in _BY_ID or not _is_data_store(_BY_ID[chosen]["kind"]):
             raise RuntimeError("Choose Supabase, MongoDB, or S3 before opening a client.")
         cfg = self.resolved(chosen)
         if not self._configured(chosen, cfg):
@@ -369,6 +383,25 @@ def _test_s3(cfg: dict[str, Any], _send_to: str | None) -> str:
     return f"S3 bucket '{cfg['bucket']}' is reachable."
 
 
+def _test_gemini(cfg: dict[str, Any], _send_to: str | None) -> str:
+    _need(cfg, "api_key")
+    model = str(cfg.get("model") or "gemini-flash-latest").strip()
+    if model.startswith("models/"):
+        model = model.split("/", 1)[1]
+    response = httpx.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        params={"key": str(cfg["api_key"]).strip()},
+        json={
+            "contents": [{"parts": [{"text": "Reply with exactly: ready"}]}],
+            "generationConfig": {"temperature": 0, "maxOutputTokens": 16},
+        },
+        timeout=30.0,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Gemini returned {response.status_code}: {response.text[:180]}")
+    return f"Gemini answered on {model}. Campus answers stay limited to measured records and knowledge excerpts."
+
+
 def _test_smtp(cfg: dict[str, Any], send_to: str | None) -> str:
     if not _truthy(cfg.get("enabled", True)):
         raise RuntimeError("Email is disabled. Turn Enabled on, then test again.")
@@ -443,6 +476,7 @@ _TESTERS = {
     "mongodb": _test_mongodb,
     "s3": _test_s3,
     "smtp": _test_smtp,
+    "gemini": _test_gemini,
 }
 _OPENERS = {
     "supabase": _open_supabase,

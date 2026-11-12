@@ -298,6 +298,18 @@ function AdminInner() {
 
         <div className="grid md:grid-cols-3 gap-4 mb-8">
           <Link
+            href="/admin/insight"
+            className="p-5 rounded-2xl bg-white border border-gray-100 hover:border-primary/20 transition-all flex items-center gap-4"
+          >
+            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+              <BrainCircuit className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-primary">Thinking and forecast</h3>
+              <p className="text-gray-600 text-sm">Read measured campus figures with Gemini</p>
+            </div>
+          </Link>
+          <Link
             href="/admin/upload"
             className="p-5 rounded-2xl bg-white border border-gray-100 hover:border-primary/20 transition-all flex items-center gap-4"
           >

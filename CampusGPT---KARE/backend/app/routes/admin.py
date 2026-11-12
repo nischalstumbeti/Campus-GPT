@@ -1,7 +1,7 @@
 """Admin panel APIs."""
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.database import get_db
@@ -242,3 +242,118 @@ async def eval_live_latency(
     from app.services.eval_service import live_latency_stats
 
     return await live_latency_stats(db)
+
+
+class InsightIn(BaseModel):
+    question: str = Field(min_length=2, max_length=2000)
+
+
+def _pct(present: int, od: int, conducted: int) -> float:
+    if conducted <= 0:
+        return 0.0
+    return round(100.0 * (present + od) / conducted, 1)
+
+
+async def _campus_measures(db: AsyncSession) -> dict:
+    from app.models.academic import AttendanceSummary
+    from app.models.analytics import QueryLog
+    from app.services.vector_store import get_vector_store
+
+    rows = (await db.execute(select(AttendanceSummary))).scalars().all()
+    counted = below = watch = ok = 0
+    for row in rows:
+        conducted = int(row.conducted or 0)
+        if conducted <= 0:
+            continue
+        counted += 1
+        pct = _pct(int(row.present or 0), int(row.od or 0), conducted)
+        if pct < 70:
+            below += 1
+        elif pct < 75:
+            watch += 1
+        else:
+            ok += 1
+    queries = int((await db.execute(select(func.count()).select_from(QueryLog))).scalar() or 0)
+    failed = int((await db.execute(select(func.count()).select_from(QueryLog).where(QueryLog.failed == 1))).scalar() or 0)
+    try:
+        chunks = int(get_vector_store().count() or 0)
+    except Exception:
+        chunks = 0
+    return {
+        "attendance_rows": counted,
+        "attendance_below_70": below,
+        "attendance_watch": watch,
+        "attendance_ok": ok,
+        "questions_logged": queries,
+        "questions_low_confidence": failed,
+        "knowledge_excerpts": chunks,
+    }
+
+
+def _measure_text(measures: dict) -> str:
+    return (
+        f"Attendance course rows counted: {measures['attendance_rows']}. "
+        f"Below 70 percent: {measures['attendance_below_70']}. "
+        f"From 70 up to 75 percent: {measures['attendance_watch']}. "
+        f"At or above 75 percent: {measures['attendance_ok']}. "
+        f"Questions logged: {measures['questions_logged']}. "
+        f"Low-confidence questions: {measures['questions_low_confidence']}. "
+        f"Knowledge excerpts stored: {measures['knowledge_excerpts']}."
+    )
+
+
+@router.post("/insight")
+async def admin_insight(
+    body: InsightIn,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_admin),
+):
+    """Admin reading: ethics check, measured campus figures, then Gemini over those records."""
+    from app.config import get_settings
+    from app.services.rag_service import rag_pipeline, retrieve_context
+    from app.utils.prompt_validator import is_valid_prompt
+
+    valid, err = is_valid_prompt(body.question)
+    measures = await _campus_measures(db)
+    evidence = _measure_text(measures)
+    thinking = [
+        "Checked the question against campus ethics rules.",
+        "Counted attendance rows, logged questions, and knowledge excerpts. No student names are included.",
+    ]
+    if not valid:
+        return {
+            "answer": err or "This desk only answers campus questions from measured records.",
+            "thinking": thinking + ["The question was refused."],
+            "sources": [],
+            "measures": measures,
+            "confidence": 0,
+            "gemini": bool((get_settings().GEMINI_API_KEY or "").strip()),
+        }
+    chunks, sources, _score = await retrieve_context(body.question)
+    thinking.append(f"Retrieved {len(chunks)} knowledge excerpt(s) for this question.")
+    if not (get_settings().GEMINI_API_KEY or "").strip():
+        thinking.append("No Gemini key is saved, so the reply is the measured figures only.")
+        return {
+            "answer": evidence + " Paste the Gemini API key on Connections and test it. Then ask again for a written reading of these figures.",
+            "thinking": thinking,
+            "sources": sources,
+            "measures": measures,
+            "confidence": 1 if measures["attendance_rows"] or measures["questions_logged"] else 0.4,
+            "gemini": False,
+        }
+    result = await rag_pipeline(
+        body.question,
+        agent_type="admin",
+        db=db,
+        user=user,
+        extra_context=evidence,
+    )
+    thinking.append("Wrote the answer from the measured figures and the retrieved excerpts only.")
+    return {
+        "answer": result.get("answer") or evidence,
+        "thinking": thinking,
+        "sources": result.get("sources") or sources,
+        "measures": measures,
+        "confidence": result.get("confidence") or 0,
+        "gemini": True,
+    }
