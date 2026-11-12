@@ -329,12 +329,20 @@ async def admin_insight(
             "confidence": 0,
             "gemini": bool((get_settings().GEMINI_API_KEY or "").strip()),
         }
+    from app.services.live_campus import live_records_text
+
+    live = await live_records_text()
+    if live:
+        evidence = evidence + " " + live
+        thinking.append("Loaded the latest university attendance, fee, and notice counts. No student names are included.")
+    else:
+        thinking.append("The university snapshot was not available, so only the local Campus-GPT counts are included.")
     chunks, sources, _score = await retrieve_context(body.question)
     thinking.append(f"Retrieved {len(chunks)} knowledge excerpt(s) for this question.")
     if not (get_settings().GEMINI_API_KEY or "").strip():
         thinking.append("No Gemini key is saved, so the reply is the measured figures only.")
         return {
-            "answer": evidence + " Paste the Gemini API key on Connections and test it. Then ask again for a written reading of these figures.",
+            "answer": evidence + " Paste the Gemini API key on this page and save it. Then ask again for a written forecast.",
             "thinking": thinking,
             "sources": sources,
             "measures": measures,

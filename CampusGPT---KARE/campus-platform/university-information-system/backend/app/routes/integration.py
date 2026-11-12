@@ -6,7 +6,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +14,9 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import (
     Achievement,
+    Announcement,
     AttendanceRecord,
+    AttendanceSession,
     Complaint,
     CourseOffering,
     Enrollment,
@@ -26,6 +28,7 @@ from app.models import (
     HostelBlock,
     HostelLeave,
     IntegrationConsent,
+    StudentFee,
     Mark,
     Room,
     StudentProfile,
@@ -1426,3 +1429,84 @@ async def service_set_password(
     )
     await db.flush()
     return {"ok": True, "username": user.username, "source": "UIS"}
+
+
+def _band(attended: int, total: int) -> str | None:
+    if total <= 0:
+        return None
+    pct = 100.0 * attended / total
+    if pct < 70:
+        return "below_70"
+    if pct < 75:
+        return "watch_70_75"
+    return "at_or_above_75"
+
+
+@router.get("/campus-snapshot")
+async def campus_snapshot(
+    _: Annotated[bool, Depends(_require_integration_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Aggregate campus figures for Campus-GPT. No student names."""
+    from datetime import datetime
+
+    course_rows = (
+        await db.execute(select(AttendanceRecord.attended, AttendanceRecord.total))
+    ).all()
+    bands = {"below_70": 0, "watch_70_75": 0, "at_or_above_75": 0, "counted": 0}
+    for attended, total in course_rows:
+        band = _band(int(attended or 0), int(total or 0))
+        if not band:
+            continue
+        bands["counted"] += 1
+        bands[band] += 1
+
+    profiles = (await db.execute(select(StudentProfile.overall_attendance))).scalars().all()
+    profile_bands = {"below_75": 0, "at_or_above_75": 0, "counted": 0}
+    for raw in profiles:
+        value = float(raw or 0)
+        if value <= 0:
+            continue
+        profile_bands["counted"] += 1
+        if value < 75:
+            profile_bands["below_75"] += 1
+        else:
+            profile_bands["at_or_above_75"] += 1
+
+    today_rows = (
+        await db.execute(
+            select(AttendanceSession.status, func.count())
+            .where(AttendanceSession.entry_date == date.today())
+            .group_by(AttendanceSession.status)
+        )
+    ).all()
+    today = {str(status or "").upper(): int(count or 0) for status, count in today_rows}
+
+    fee_rows = (
+        await db.execute(select(StudentFee.status, func.count()).group_by(StudentFee.status))
+    ).all()
+    fees = {str(status or "unknown"): int(count or 0) for status, count in fee_rows}
+    due_amount = float(
+        (
+            await db.execute(
+                select(func.coalesce(func.sum(StudentFee.total_amount - StudentFee.paid_amount), 0)).where(
+                    StudentFee.status != "paid"
+                )
+            )
+        ).scalar()
+        or 0
+    )
+
+    notices = (
+        await db.execute(select(Announcement.title).order_by(Announcement.published_at.desc()).limit(6))
+    ).scalars().all()
+
+    return {
+        "source": "UIS",
+        "counted_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "course_attendance": bands,
+        "student_overall_attendance": profile_bands,
+        "attendance_today": today,
+        "fees": {"by_status": fees, "unpaid_balance": round(due_amount, 2)},
+        "notices": [title for title in notices if title],
+    }

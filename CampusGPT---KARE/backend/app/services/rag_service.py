@@ -264,12 +264,12 @@ If a personal academic record is missing, say so — do not invent numbers."""
         import logging
 
         logging.getLogger(__name__).warning("Gemini generate failed: %s", e)
-        if (agent_type or "").lower() == "admin":
-            evidence = (extra_context or context or "").strip()
+        evidence = (extra_context or context or "").strip()
+        if evidence:
             return (
-                evidence[:1600] or "The model could not write this answer, and there is no measured evidence to show.",
-                0.4,
-                [{"source": "Measured campus records", "excerpt": evidence[:180]}],
+                evidence[:1600],
+                0.45,
+                [{"source": "Live campus records", "excerpt": evidence[:180]}],
             )
         if _is_internet_issue(e) and not context_chunks:
             return (
@@ -599,17 +599,39 @@ async def rag_pipeline(
         "denied": denied,
     }
 
-    # Fact intents with a ready gateway answer — return directly (no faculty dump noise)
+    try:
+        from app.services.live_campus import live_records_text
+
+        live_text = await live_records_text()
+    except Exception:
+        live_text = ""
+    if live_text:
+        extra_context = (extra_context + "\n\nLive university records:\n" + live_text).strip()
+        data_used = list(data_used) + [
+            {
+                "data": "Live campus counts",
+                "purpose": "Current attendance, fees, and notices",
+                "source": "UIS",
+                "permission": "aggregate",
+                "access": "Authorized",
+                "why": "The answer uses the latest university counts, with no student names.",
+            }
+        ]
+        extras["data_used"] = data_used
+
+    # Without Gemini, a ready personal record is the answer. With a key, Gemini writes from those records.
     if academic_context and intent_name not in ("knowledge", "greeting") and data_used:
-        return {
-            "answer": academic_context,
-            "confidence": 0.95,
-            "sources": [{"source": "Academic database", "excerpt": "Authorized campus records", "relevance": 1.0}],
-            "escalated": False,
-            "retrieval_score": 1.0,
-            "diagram": None,
-            **extras,
-        }
+        extra_context = (extra_context + "\n\nAuthorized records for this person:\n" + academic_context).strip()
+        if not (_live_settings().GEMINI_API_KEY or "").strip():
+            return {
+                "answer": academic_context,
+                "confidence": 0.95,
+                "sources": [{"source": "Academic database", "excerpt": "Authorized campus records", "relevance": 1.0}],
+                "escalated": False,
+                "retrieval_score": 1.0,
+                "diagram": None,
+                **extras,
+            }
 
     if not (_live_settings().GEMINI_API_KEY or "").strip():
         if academic_context and intent_name not in ("knowledge", "greeting"):
@@ -617,6 +639,16 @@ async def rag_pipeline(
                 "answer": academic_context,
                 "confidence": 0.9,
                 "sources": [{"source": "Academic database", "excerpt": "Live SIS records", "relevance": 1.0}],
+                "escalated": False,
+                "retrieval_score": 1.0,
+                "diagram": None,
+                **extras,
+            }
+        if live_text:
+            return {
+                "answer": live_text,
+                "confidence": 0.9,
+                "sources": [{"source": "UIS", "excerpt": live_text[:180], "relevance": 1.0}],
                 "escalated": False,
                 "retrieval_score": 1.0,
                 "diagram": None,

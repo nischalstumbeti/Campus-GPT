@@ -231,6 +231,26 @@ async def get_achievements(uis_username: str) -> dict:
     return await _get("/api/v1/integration/campus-gpt/student/achievements", uis_username, "Career assistance")
 
 
+async def get_campus_snapshot() -> dict[str, Any]:
+    """Aggregate UIS figures. Empty dict when the university API is unreachable."""
+    if not uis_enabled():
+        return {}
+    s = get_settings()
+    url = f"{s.UIS_API_BASE_URL.rstrip('/')}/api/v1/integration/campus-gpt/campus-snapshot"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get(
+                url,
+                headers={"X-API-Key": s.UIS_INTEGRATION_API_KEY, "Accept": "application/json"},
+            )
+        if r.status_code >= 400:
+            return {}
+        data = r.json()
+        return data if isinstance(data, dict) else {}
+    except httpx.HTTPError:
+        return {}
+
+
 async def get_announcements(*, role: str | None = None, department_code: str | None = None) -> list[dict]:
     if not uis_enabled():
         return []
