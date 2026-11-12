@@ -179,6 +179,12 @@ class AttendanceRecord(Base):
 
     enrollment: Mapped["Enrollment"] = relationship()
 
+    @property
+    def percentage(self) -> float:
+        if self.total <= 0:
+            return 0.0
+        return round(100.0 * self.attended / self.total, 1)
+
 
 class AttendanceSession(Base):
     """One class period: date, slot, and P / A / OD / ML / RH / EH."""
@@ -193,12 +199,6 @@ class AttendanceSession(Base):
     status: Mapped[str] = mapped_column(String(8), default="P")
 
     enrollment: Mapped["Enrollment"] = relationship()
-
-    @property
-    def percentage(self) -> float:
-        if self.total <= 0:
-            return 0.0
-        return round(100.0 * self.attended / self.total, 1)
 
 
 class Mark(Base):
