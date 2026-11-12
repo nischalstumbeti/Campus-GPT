@@ -24,6 +24,8 @@ export default function GroupsPage() {
     load();
   }, []);
 
+  const visible = items.filter((group) => !group.purpose.startsWith("office-route:"));
+
   const path = (group: Group): string => {
     const parentRow = items.find((item) => item.id === group.parent_id);
     return parentRow ? `${path(parentRow)} / ${group.name}` : group.name;
@@ -75,7 +77,7 @@ export default function GroupsPage() {
           <label className="text-xs text-slate-500">Inside
             <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={parent} onChange={(e) => setParent(e.target.value)}>
               <option value="">No parent</option>
-              {items.map((item) => <option key={item.id} value={item.id}>{path(item)}</option>)}
+              {visible.map((item) => <option key={item.id} value={item.id}>{path(item)}</option>)}
             </select>
           </label>
           <label className="text-xs text-slate-500">Why this label<input className="mt-1 w-full border rounded px-2 py-1 text-sm" value={purpose} onChange={(e) => setPurpose(e.target.value)} /></label>
@@ -83,7 +85,7 @@ export default function GroupsPage() {
         </form>
       </section>
       <div className="space-y-3">
-        {items.map((group) => (
+        {visible.map((group) => (
           <section key={group.id} className="uis-panel">
             <h2 className="uis-panel-title">{path(group)}</h2>
             <div className="p-4 space-y-2">

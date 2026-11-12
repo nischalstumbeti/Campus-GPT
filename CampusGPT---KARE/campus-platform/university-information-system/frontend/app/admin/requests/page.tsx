@@ -19,6 +19,30 @@ const OFFICES: { role: string; label: string; roles: string[] }[] = [
 type Person = { id: number; name: string; department: string; role: string };
 
 type Chosen = { role: string; userId: number; label: string };
+type StoredGroup = { id: number; name: string; purpose: string };
+
+const ROUTE_MARK = "office-route:";
+
+function routesFromGroups(items: StoredGroup[], directory: Person[]): Route[] {
+  return items
+    .filter((item) => (item.purpose || "").startsWith(ROUTE_MARK))
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      active: true,
+      steps: item.purpose
+        .slice(ROUTE_MARK.length)
+        .split(",")
+        .filter(Boolean)
+        .map((token) => {
+          const [role, id] = token.split(":");
+          const office = OFFICES.find((entry) => entry.role === role);
+          const person = directory.find((entry) => entry.id === Number(id));
+          const title = office?.label || role;
+          return person ? `${title} · ${person.name}` : title;
+        }),
+    }));
+}
 
 export default function AdminRequestsPage() {
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -32,12 +56,9 @@ export default function AdminRequestsPage() {
   const [msg, setMsg] = useState("");
 
   const load = () => {
-    apiFetch<{ items: Route[] }>("/api/v1/admin/request-routes")
-      .then((data) => setRoutes(data.items || []))
-      .catch(() => setRoutes([]));
     apiFetch<{ items: Letter[] }>("/api/v1/requests/inbox").then((data) => setInbox(data.items || [])).catch(() => setInbox([]));
     const roles = Array.from(new Set(OFFICES.flatMap((office) => office.roles)));
-    Promise.all(
+    const directoryPromise = Promise.all(
       roles.map((role) =>
         apiFetch<{ items: { id: number; full_name?: string; username?: string; department_code?: string; role?: string }[] }>(
           `/api/v1/admin/users?role=${role}&limit=200`
@@ -58,9 +79,23 @@ export default function AdminRequestsPage() {
           role: item.role || "",
         });
       });
-      setDirectory(people);
-      if (!people.length) setErr("No faculty, HoD, or admin accounts were found in Users.");
+      return people;
     });
+    const routesPromise = apiFetch<{ items: Route[] }>("/api/v1/admin/request-routes")
+      .then((data) => ({ kind: "api" as const, items: data.items || [] }))
+      .catch(async (error: unknown) => {
+        const missing = error instanceof Error && error.message === "Not Found";
+        if (!missing) throw error;
+        const data = await apiFetch<{ items: StoredGroup[] }>("/api/v1/admin/groups");
+        return { kind: "groups" as const, items: data.items || [] };
+      });
+    Promise.all([directoryPromise, routesPromise])
+      .then(([people, routes]) => {
+        setDirectory(people);
+        setRoutes(routes.kind === "api" ? routes.items : routesFromGroups(routes.items, people));
+        if (!people.length) setErr("No faculty, HoD, or admin accounts were found in Users.");
+      })
+      .catch((error) => setErr(error instanceof Error ? error.message : "Could not load routes"));
   };
 
   useEffect(() => { load(); }, []);
@@ -90,17 +125,26 @@ export default function AdminRequestsPage() {
       setErr("Add the advisor, HoD, or school dean from the list.");
       return;
     }
+    const steps = chosen.map((item) => `${item.role}:${item.userId}`).join(",");
     try {
-      await apiFetch("/api/v1/admin/request-routes", {
-        method: "POST",
-        body: JSON.stringify({ name, steps: chosen.map((item) => `${item.role}:${item.userId}`).join(","), active: true }),
-      });
-      setMsg("Route saved. Students can choose it when they write a letter.");
+      try {
+        await apiFetch("/api/v1/admin/request-routes", {
+          method: "POST",
+          body: JSON.stringify({ name, steps, active: true }),
+        });
+      } catch (error) {
+        const missing = error instanceof Error && error.message === "Not Found";
+        if (!missing) throw error;
+        await apiFetch("/api/v1/admin/groups", {
+          method: "POST",
+          body: JSON.stringify({ name, purpose: `${ROUTE_MARK}${steps}` }),
+        });
+      }
+      setMsg("Route saved.");
       setChosen([]);
       load();
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Could not save the route";
-      setErr(text === "Not Found" ? "The route could not be saved because the university API is still on the previous build. The people list is ready; save again after that API restarts." : text);
+      setErr(error instanceof Error ? error.message : "Could not save the route");
     }
   };
 
