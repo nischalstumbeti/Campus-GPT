@@ -16,9 +16,10 @@ const RECIPIENTS = [
 ];
 
 function DocumentsInner() {
-  const [topic, setTopic] = useState("attend an AWS workshop");
+  const [topic, setTopic] = useState("");
   const [recipient, setRecipient] = useState(RECIPIENTS[0]);
   const [customRecipient, setCustomRecipient] = useState("");
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [out, setOut] = useState<{ formal: string; email: string; short: string; disclaimer: string } | null>(null);
@@ -30,10 +31,18 @@ function DocumentsInner() {
       return;
     }
     setErr("");
+    setBusy(true);
     const audience = recipient === "other" ? typed : `The ${recipient}`;
     setSentTo(audience);
-    const d = await apiPost<typeof out>("/api/copilot/letters", { kind: "hod_permission", topic, audience });
-    setOut(d);
+    try {
+      const d = await apiPost<typeof out>("/api/copilot/letters", { kind: "hod_permission", topic, audience });
+      setOut(d);
+    } catch (error) {
+      setOut(null);
+      setErr(error instanceof Error ? error.message : "The letter could not be written.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const copy = (text: string) => navigator.clipboard.writeText(text);
@@ -43,7 +52,7 @@ function DocumentsInner() {
       <main className="max-w-3xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold text-primary">Document assistant</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Generate letter templates to copy yourself. Nothing is submitted from here.
+          The AI writes the letter from your signed-in record and what you type. Nothing is submitted from here.
         </p>
         <div className="mt-4 space-y-3">
           <label className="block text-sm text-gray-700">
@@ -72,11 +81,11 @@ function DocumentsInner() {
           ) : null}
           <label className="block text-sm text-gray-700">
             What is the letter about?
-            <input value={topic} onChange={(e) => setTopic(e.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" />
+            <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="What should the letter ask for?" className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" />
           </label>
           {err ? <p className="text-sm text-red-600">{err}</p> : null}
           {sentTo ? <p className="text-sm text-gray-600">Addressed to: {sentTo}</p> : null}
-          <button onClick={generate} className="px-4 py-2 rounded-xl bg-primary text-white text-sm">Generate</button>
+          <button onClick={generate} disabled={busy || !topic.trim()} className="px-4 py-2 rounded-xl bg-primary text-white text-sm disabled:opacity-50">{busy ? "Writing…" : "Generate"}</button>
         </div>
         {out && (
           <div className="mt-6 space-y-4">

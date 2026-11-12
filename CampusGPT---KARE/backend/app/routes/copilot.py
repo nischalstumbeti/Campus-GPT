@@ -1,4 +1,7 @@
 """Copilot modules: graduation, announcements, letters, career, achievements, week plan."""
+import json
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -182,26 +185,46 @@ async def letters(body: LetterRequest, db: AsyncSession = Depends(get_db), user:
     name = student.full_name
     roll = student.roll_no
     dept = student.department
-    topic = body.topic.strip() or "an academic event"
+    topic = body.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Say what the letter is about")
     audience = " ".join((body.audience or "").split())
     if not audience:
         raise HTTPException(status_code=400, detail="Choose who the letter is addressed to")
     while audience.lower().startswith("the the "):
         audience = audience[4:].strip()
     dear = audience[4:].strip() if audience.lower().startswith("the ") else audience
-    formal = (
-        f"From\n{name}\n{roll}, {dept} — Semester {student.semester}, Section {student.section}\n\n"
-        f"To\n{audience}\nDepartment of {dept}\n\n"
-        f"Respected Sir/Madam,\n\n"
-        f"I request permission to {topic}. I will ensure that attendance and assessments are not affected, "
-        f"and I will make up any missed work.\n\nThanking you,\n{name}\n{roll}"
+    from app.config import get_settings
+    from app.services.rag_service import _gemini_generate, _get_genai
+
+    if not (get_settings().GEMINI_API_KEY or "").strip():
+        raise HTTPException(status_code=503, detail="The AI key is not set. Add it on Thinking, then generate the letter again.")
+    genai = _get_genai()
+    if not genai:
+        raise HTTPException(status_code=503, detail="The AI key is not set. Add it on Thinking, then generate the letter again.")
+    prompt = (
+        "Write a real student letter for Kalasalingam Academy of Research and Education. "
+        "Use only the identity facts below. Do not invent marks, attendance, dates, or a different student.\n"
+        f"Student: {name}\nRegister: {roll}\nDepartment: {dept}\n"
+        f"Semester: {student.semester}\nSection: {student.section}\n"
+        f"Addressed to: {audience}\nSalutation name: {dear}\nWhat they need: {topic}\n\n"
+        "Return JSON only, with keys formal, email, and short. "
+        "formal is the full letter. email is a short email with a subject line. short is two sentences."
     )
-    email = (
-        f"Subject: Permission request — {topic}\n\n"
-        f"Dear {dear},\n\nI am {name} ({roll}), {dept} Sem {student.semester}. "
-        f"Kindly grant permission to {topic}. I will coordinate with course faculty regarding classes.\n\nRegards,\n{name}"
-    )
-    short = f"{name} ({roll}), {dept} Sem {student.semester}, requests permission to {topic}."
+    try:
+        raw = await _gemini_generate(genai, prompt)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"The AI could not write the letter. {exc}"[:400])
+    match = re.search(r"\{.*\}", raw or "", re.DOTALL)
+    try:
+        parsed = json.loads(match.group(0) if match else (raw or ""))
+    except json.JSONDecodeError:
+        parsed = {}
+    formal = str(parsed.get("formal") or raw or "").strip()
+    email = str(parsed.get("email") or "").strip()
+    short = str(parsed.get("short") or "").strip()
+    if not formal:
+        raise HTTPException(status_code=502, detail="The AI returned an empty letter. Try again.")
     return {
         "kind": "recommendation",
         "disclaimer": "AI-generated drafts. Not submitted. Review before you send. This is not an official university decision.",

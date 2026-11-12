@@ -1,7 +1,7 @@
 """RAG pipeline service - Retrieval Augmented Generation. Uses Gemini only."""
 import asyncio
 from app.config import get_settings
-from app.services.demo_responses import get_demo_response
+_NO_AI = "The AI key is not set. An admin can add it on Thinking. I will not invent attendance, marks, or a sample answer."
 from app.utils.prompt_validator import is_valid_prompt
 
 settings = get_settings()
@@ -198,7 +198,7 @@ async def generate_response(
                     0.65,
                     [{"source": "Campus knowledge (database)", "excerpt": clean[:180]}],
                 )
-        return get_demo_response(query, agent_type=agent_type)
+        return _NO_AI, 0.0, []
 
     context = "\n\n---\n\n".join(context_chunks) if context_chunks else ""
     history_lines = []
@@ -271,23 +271,16 @@ If a personal academic record is missing, say so — do not invent numbers."""
                 0.45,
                 [{"source": "Live campus records", "excerpt": evidence[:180]}],
             )
-        if _is_internet_issue(e) and not context_chunks:
-            return (
-                "Internet issue. Check your connection and try again.",
-                0.0,
-                [],
-            )
-        # Prefer curated FAQ / demo answers over a raw error banner
-        demo_answer, demo_conf, demo_sources = get_demo_response(query, agent_type=agent_type)
-        if context_chunks and demo_conf < 0.7:
+        if context_chunks:
             clean = (context_chunks[0] or "").strip()
             if clean:
                 return (
                     clean[:1200],
-                    0.7,
+                    0.55,
                     [{"source": "Campus knowledge", "excerpt": clean[:180]}],
                 )
-        return demo_answer, max(demo_conf, 0.7), demo_sources
+        detail = str(e).strip()[:300] or "The model did not respond."
+        return f"The AI could not answer. {detail}", 0.0, []
 
     confidence = 0.85 if context else 0.3
     if "don't have enough" in answer.lower() or "verified information" in answer.lower():
@@ -337,35 +330,6 @@ async def rag_pipeline(
     )
 
     agent = (agent_type or "general").lower()
-
-    # Reception: complete college briefing from DB fact sheet
-    if agent == "reception":
-        try:
-            from app.services.campus_facts import reception_full_reply_async, wants_full_campus_brief
-
-            if wants_full_campus_brief(query):
-                full = await reception_full_reply_async(db)
-                if full:
-                    return {
-                        "answer": full,
-                        "confidence": 1.0,
-                        "sources": [
-                            {
-                                "source": "campus_fact_sheets (database)",
-                                "excerpt": "Campus identity, contacts, programs, fees, hostel, placements",
-                                "relevance": 1.0,
-                            }
-                        ],
-                        "escalated": False,
-                        "retrieval_score": 1.0,
-                        "diagram": None,
-                        "data_used": [{"data": "Reception fact sheet", "source": "database", "permission": "public"}],
-                        "intent": "knowledge",
-                        "kind": "fact",
-                        "denied": [],
-                    }
-        except Exception:
-            pass
 
     # Short greetings: never pull faculty/timetable dumps
     if is_greeting(query) or classify_intent(query) == "greeting":
@@ -654,12 +618,11 @@ async def rag_pipeline(
                 "diagram": None,
                 **extras,
             }
-        answer, confidence, response_sources = get_demo_response(query, agent_type=agent_type)
         return {
-            "answer": answer,
-            "confidence": confidence,
-            "sources": response_sources,
-            "escalated": confidence < settings.CONFIDENCE_THRESHOLD,
+            "answer": _NO_AI,
+            "confidence": 0.0,
+            "sources": [],
+            "escalated": False,
             "retrieval_score": 0.0,
             "diagram": None,
             **extras,
