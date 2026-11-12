@@ -57,12 +57,17 @@ def _get_genai():
 
 
 # Preferred chat models (first configured, then known-good fallbacks)
+# gemini-flash-latest currently resolves to gemini-3, whose free plan allows 5 requests.
 _CHAT_MODEL_FALLBACKS = (
-    "gemini-flash-latest",
-    "gemini-3.8-flash",
     "gemini-2.5-flash",
-    "gemini-pro-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
 )
+
+
+def _low_free_quota(name: str) -> bool:
+    n = name.lower()
+    return n.startswith("gemini-3") or n in {"gemini-flash-latest", "gemini-pro-latest"}
 
 # Cache the first model that works for this process
 _resolved_chat_model: str | None = None
@@ -71,7 +76,7 @@ _resolved_chat_model: str | None = None
 def _chat_model_candidates() -> list[str]:
     primary = (_live_settings().GEMINI_CHAT_MODEL or "").strip()
     out: list[str] = []
-    if primary:
+    if primary and not _low_free_quota(primary):
         out.append(primary)
     for m in _CHAT_MODEL_FALLBACKS:
         if m not in out:
@@ -107,7 +112,10 @@ async def _gemini_generate(genai, prompt: str, max_output_tokens: int = 420) -> 
             last_err = exc
             msg = str(exc).lower()
             # Retry next model when this model id is retired/unavailable
-            if any(t in msg for t in ("not found", "no longer available", "not supported", "404")):
+            retry = any(t in msg for t in ("not found", "no longer available", "not supported", "404", "429", "quota", "rate limit", "resource exhausted"))
+            if retry:
+                if _resolved_chat_model == model_name:
+                    _resolved_chat_model = None
                 log.warning(
                     "Gemini model %s failed (%s); trying fallback",
                     model_name,

@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # AI API (Gemini only)
     GEMINI_API_KEY: str = ""
-    # google.generativeai: 1.5-flash / 2.0-flash retired on many keys — use flash-latest
-    GEMINI_CHAT_MODEL: str = "gemini-flash-latest"
+    # gemini-flash-latest maps to gemini-3, which allows 5 free requests.
+    GEMINI_CHAT_MODEL: str = "gemini-2.5-flash"
     GEMINI_EMBEDDING_MODEL: str = "models/text-embedding-004"
 
     # Database

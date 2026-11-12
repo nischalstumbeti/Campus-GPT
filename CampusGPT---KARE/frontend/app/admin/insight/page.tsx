@@ -52,7 +52,7 @@ function InsightInner() {
     setError("");
     try {
       await apiPut("/api/admin/integrations/gemini", {
-        values: { api_key: key, model: "gemini-flash-latest" },
+        values: { api_key: key, model: "gemini-2.5-flash" },
         make_active: false,
       });
       setKeySaved(true);

@@ -55,6 +55,8 @@ def _apply(provider: str, cfg: dict) -> None:
         key = str(cfg.get("api_key") or "").strip() or (settings.GEMINI_API_KEY or "").strip()
         settings.GEMINI_API_KEY = key
         model = str(cfg.get("model") or "").strip()
+        if model.lower() in {"gemini-flash-latest", "gemini-pro-latest"} or model.lower().startswith("gemini-3"):
+            model = "gemini-2.5-flash"
         if model:
             settings.GEMINI_CHAT_MODEL = model
         try:

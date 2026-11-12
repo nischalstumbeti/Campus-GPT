@@ -75,7 +75,7 @@ _PROVIDERS: list[dict[str, Any]] = [
         "summary": "Campus-GPT uses this key for retrieval answers, admin thinking, and forecasts. The model may use only campus records and knowledge excerpts. It must refuse unethical requests and say when a figure was not measured.",
         "fields": [
             {"key": "api_key", "label": "Gemini API key", "type": "password", "env": "GEMINI_API_KEY", "secret": True, "required": True, "placeholder": "Paste the key from Google AI Studio"},
-            {"key": "model", "label": "Chat model", "type": "text", "env": "GEMINI_CHAT_MODEL", "default": "gemini-flash-latest", "placeholder": "gemini-flash-latest"},
+            {"key": "model", "label": "Chat model", "type": "text", "env": "GEMINI_CHAT_MODEL", "default": "gemini-2.5-flash", "placeholder": "gemini-2.5-flash"},
         ],
     },
 ]
@@ -390,7 +390,9 @@ def _test_s3(cfg: dict[str, Any], _send_to: str | None) -> str:
 
 def _test_gemini(cfg: dict[str, Any], _send_to: str | None) -> str:
     _need(cfg, "api_key")
-    model = str(cfg.get("model") or "gemini-flash-latest").strip()
+    model = str(cfg.get("model") or "gemini-2.5-flash").strip()
+    if model.lower() in {"gemini-flash-latest", "gemini-pro-latest"} or model.lower().startswith("gemini-3"):
+        model = "gemini-2.5-flash"
     if model.startswith("models/"):
         model = model.split("/", 1)[1]
     response = httpx.post(
