@@ -21,8 +21,11 @@ type Thread = {
   redirected_to: string;
   created_by_name: string;
   assignee_name: string;
+  audience_label?: string;
   messages: Msg[];
 };
+
+const STAFF_ROLES = ["faculty", "hod", "school_dean", "director", "operator", "coe", "developer", "admin", "university_admin", "super_admin", "hostel_admin"];
 
 const WARDEN_TEMPLATES = [
   {
@@ -64,6 +67,11 @@ export default function MessagesPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [filter, setFilter] = useState<"all" | "hostel">("all");
+  const [groups, setGroups] = useState<{ id: number; name: string }[]>([]);
+  const [people, setPeople] = useState<{ id: number; name: string; username: string; role: string }[]>([]);
+  const [groupId, setGroupId] = useState("");
+  const [picked, setPicked] = useState<number[]>([]);
+  const [personQuery, setPersonQuery] = useState("");
 
   const load = useCallback(() => {
     apiFetch<{ threads: Thread[] }>("/api/v1/messages/threads")
@@ -81,18 +89,35 @@ export default function MessagesPage() {
     return () => clearInterval(t);
   }, [load]);
 
+  useEffect(() => {
+    if (!STAFF_ROLES.includes(role)) return;
+    apiFetch<{ groups: { id: number; name: string }[]; users: { id: number; name: string; username: string; role: string }[] }>(
+      "/api/v1/messages/audience"
+    )
+      .then((data) => {
+        setGroups(data.groups || []);
+        setPeople(data.users || []);
+      })
+      .catch(() => {
+        setGroups([]);
+        setPeople([]);
+      });
+  }, [role]);
+
   const create = async (e: FormEvent) => {
     e.preventDefault();
     setErr("");
     setMsg("");
     try {
-      const facultySender = role === "faculty" || role === "hod" || role === "school_dean";
+      const facultySender = STAFF_ROLES.includes(role);
       let t: Thread;
       if (facultySender) {
         const form = new FormData();
         form.append("subject", subject);
         form.append("body", body);
         form.append("to_role", toRole);
+        if (groupId) form.append("group_id", groupId);
+        if (picked.length) form.append("user_ids", picked.join(","));
         composeFiles.forEach((file) => form.append("files", file));
         t = await apiFetch<Thread>("/api/v1/messages/threads/with-files", { method: "POST", body: form });
       } else {
@@ -109,9 +134,13 @@ export default function MessagesPage() {
       setSubject("");
       setBody("");
       setComposeFiles([]);
+      setGroupId("");
+      setPicked([]);
       setActive(t);
       setMsg(
-        toRole === "hostel"
+        groupId || picked.length
+          ? "Sent to the selected group and people. Each person sees it in Messages."
+          : toRole === "hostel"
           ? "Sent to the Hostel Warden. They will see it in the hostel inbox."
           : "Message sent (synced with Campus-GPT via UIS)."
       );
@@ -134,7 +163,7 @@ export default function MessagesPage() {
     e.preventDefault();
     if (!active) return;
     try {
-      const facultySender = role === "faculty" || role === "hod" || role === "school_dean";
+      const facultySender = STAFF_ROLES.includes(role);
       let t: Thread;
       if (facultySender) {
         const form = new FormData();
@@ -164,16 +193,15 @@ export default function MessagesPage() {
     apiDownload(`/api/v1/messages/attachments/${file.id}`, file.filename).catch(() => setErr("Could not download the file"));
   };
 
-  const isStaff = ["faculty", "hod", "admin", "university_admin", "super_admin", "hostel_admin"].includes(role);
-  const canCompose = role === "student" || role === "faculty" || role === "hod";
+  const isStaff = STAFF_ROLES.includes(role);
+  const canCompose = role === "student" || isStaff;
   const visible = filter === "hostel" ? threads.filter((t) => t.category === "hostel") : threads;
 
   return (
     <AppShell>
       <h1 className="text-2xl font-bold text-brand mb-1">Messages</h1>
       <p className="text-sm text-slate-600 mb-4">
-        Same inbox as Campus-GPT — message admin, faculty, or the hostel warden.
-        {(role === "faculty" || role === "hod" || role === "school_dean") && " Faculty can attach files to a new message or a reply."}
+        Same inbox as Campus-GPT. Students message an office. Faculty, staff, admin, and HoD can also message a group or the people they select.
       </p>
       {err && <p className="text-sm text-red-700 mb-2">{err}</p>}
       {msg && <p className="text-sm text-emerald-700 mb-2">{msg}</p>}
@@ -225,6 +253,7 @@ export default function MessagesPage() {
                   <span className="text-[11px] text-slate-500 capitalize">
                     {t.status}
                     {t.category === "hostel" ? " · hostel" : ""}
+                    {t.audience_label ? ` · ${t.audience_label}` : ""}
                   </span>
                 </button>
               </li>
@@ -260,10 +289,60 @@ export default function MessagesPage() {
                 <option value="faculty">Faculty</option>
                 <option value="hostel">Hostel warden</option>
               </select>
+              {isStaff && (
+                <>
+                  <select
+                    className="w-full border rounded-md px-2 py-1.5 text-sm"
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value)}
+                  >
+                    <option value="">No group</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="w-full border rounded-md px-2 py-1.5 text-sm"
+                    placeholder="Find a person"
+                    value={personQuery}
+                    onChange={(e) => setPersonQuery(e.target.value)}
+                  />
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {people
+                      .filter((person) =>
+                        `${person.name} ${person.username} ${person.role}`.toLowerCase().includes(personQuery.toLowerCase())
+                      )
+                      .slice(0, 20)
+                      .map((person) => (
+                        <label key={person.id} className="flex items-center gap-2 text-xs text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={picked.includes(person.id)}
+                            onChange={() =>
+                              setPicked((current) =>
+                                current.includes(person.id)
+                                  ? current.filter((id) => id !== person.id)
+                                  : [...current, person.id]
+                              )
+                            }
+                          />
+                          <span>
+                            {person.name} · {person.role}
+                          </span>
+                        </label>
+                      ))}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Leave the group and people empty to send to the office above. A group includes its smaller groups.
+                  </p>
+                </>
+              )}
               {toRole === "hostel" && (
                 <p className="text-[11px] text-indigo-700">This goes to the hostel warden inbox for approval / hostel help.</p>
               )}
-              {(role === "faculty" || role === "hod") && (
+              {(isStaff) && (
                 <label className="block text-[11px] text-slate-600">
                   Attachments
                   <input
@@ -291,7 +370,8 @@ export default function MessagesPage() {
             <>
               <h2 className="font-semibold text-brand">{active.subject}</h2>
               <p className="text-xs text-slate-500 mb-3">
-                From {active.created_by_name} · Assignee {active.assignee_name || "—"}
+                From {active.created_by_name}
+                {active.audience_label ? ` · To ${active.audience_label}` : ` · Assignee ${active.assignee_name || "—"}`}
                 {active.category === "hostel" ? " · Hostel" : ""}
               </p>
               <div className="flex-1 overflow-y-auto space-y-2 mb-3">
@@ -328,7 +408,7 @@ export default function MessagesPage() {
                     Reply
                   </button>
                 </div>
-                {(role === "faculty" || role === "hod" || role === "school_dean") && (
+                {(isStaff) && (
                   <label className="block text-[11px] text-slate-600">
                     Attach files
                     <input

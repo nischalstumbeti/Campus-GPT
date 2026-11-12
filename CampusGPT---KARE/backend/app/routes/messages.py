@@ -106,6 +106,8 @@ class ThreadCreate(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
     category: str = "general"
     to_role: str = "admin"  # admin | faculty
+    group_id: int | None = None
+    user_ids: list[int] = Field(default_factory=list)
 
 
 class ReplyIn(BaseModel):
@@ -196,6 +198,23 @@ async def list_threads(
     return {"threads": [_serialize_thread(t, users) for t in threads]}
 
 
+@router.get("/messages/audience")
+async def message_audience(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    role = user.get("role")
+    if role not in ("faculty", "hod", "admin", "super_admin", "school_dean", "director", "operator"):
+        raise HTTPException(status_code=403, detail="Only faculty, staff, admin, and HoD can choose recipients")
+    uis_user = await linked_uis_username(db, user)
+    if not uis_user:
+        raise HTTPException(status_code=400, detail="This account is not linked to the university directory")
+    try:
+        return await uis_client.list_message_audience(uis_user)
+    except uis_client.UisClientError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=exc.detail or str(exc)) from exc
+
+
 @router.post("/messages/threads")
 async def create_thread(
     body: ThreadCreate,
@@ -204,9 +223,14 @@ async def create_thread(
 ):
     uid = _uid(user)
     role = user.get("role")
-    if role not in ("student", "faculty"):
-        raise HTTPException(status_code=403, detail="Students and faculty can open issues")
+    staff = role in ("faculty", "hod", "admin", "super_admin", "school_dean", "director", "operator")
+    if role != "student" and not staff:
+        raise HTTPException(status_code=403, detail="Students and staff can open messages")
+    if (body.group_id or body.user_ids) and not staff:
+        raise HTTPException(status_code=403, detail="Only faculty, staff, admin, and HoD can message a group or selected people")
     uis_user = await linked_uis_username(db, user)
+    if (body.group_id or body.user_ids) and not uis_user:
+        raise HTTPException(status_code=400, detail="This account is not linked to the university directory")
     if role == "student":
         from app.services import consent as consents
 

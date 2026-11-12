@@ -462,6 +462,10 @@ async def update_consent(uis_username: str, permission_key: str, status: str) ->
     )
 
 
+async def list_message_audience(uis_username: str) -> dict:
+    return await _request("GET", "/api/v1/integration/campus-gpt/messages/audience", uis_username, purpose="Messaging")
+
+
 async def list_message_threads(uis_username: str) -> dict:
     return await _request("GET", "/api/v1/integration/campus-gpt/messages/threads", uis_username, purpose="Messaging")
 

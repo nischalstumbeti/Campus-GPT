@@ -30,12 +30,18 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
 function MessagesInner() {
   const { user } = useAuth();
   const role = user?.role || "student";
+  const canAddress = ["faculty", "hod", "admin", "super_admin", "school_dean", "director", "operator"].includes(role);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [active, setActive] = useState<Thread | null>(null);
   const [reply, setReply] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [toRole, setToRole] = useState("admin");
+  const [groups, setGroups] = useState<{ id: number; name: string }[]>([]);
+  const [people, setPeople] = useState<{ id: number; name: string; role: string }[]>([]);
+  const [groupId, setGroupId] = useState("");
+  const [picked, setPicked] = useState<number[]>([]);
+  const [personQuery, setPersonQuery] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [filter, setFilter] = useState<"all" | "hostel">("all");
@@ -96,6 +102,19 @@ function MessagesInner() {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (!canAddress) return;
+    apiGet<{ groups: { id: number; name: string }[]; users: { id: number; name: string; role: string }[] }>("/api/messages/audience")
+      .then((data) => {
+        setGroups(data.groups || []);
+        setPeople(data.users || []);
+      })
+      .catch(() => {
+        setGroups([]);
+        setPeople([]);
+      });
+  }, [canAddress]);
+
   const create = async (e: FormEvent) => {
     e.preventDefault();
     setMsg("");
@@ -106,11 +125,15 @@ function MessagesInner() {
         body,
         category: toRole === "hostel" ? "hostel" : "general",
         to_role: toRole,
+        group_id: groupId ? Number(groupId) : null,
+        user_ids: picked,
       });
       setSubject("");
       setBody("");
+      setGroupId("");
+      setPicked([]);
       setActive(t);
-      setMsg(toRole === "hostel" ? "Sent to the Hostel Warden." : "Message sent.");
+      setMsg(groupId || picked.length ? "Sent to the selected group and people." : toRole === "hostel" ? "Sent to the Hostel Warden." : "Message sent.");
       load();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Failed to send");
@@ -204,7 +227,7 @@ function MessagesInner() {
             )}
           </ul>
 
-          {(role === "student" || role === "faculty") && (
+          {(role === "student" || canAddress) && (
             <form onSubmit={create} className="mt-4 space-y-2 rounded-2xl border border-gray-100 bg-white p-3">
               <p className="text-xs font-semibold text-primary">New message</p>
               <input
@@ -233,6 +256,32 @@ function MessagesInner() {
               </select>
               {toRole === "hostel" && (
                 <p className="text-[11px] text-indigo-700">Delivered to the hostel warden shared inbox.</p>
+              )}
+              {canAddress && (
+                <>
+                  <select className="w-full border rounded-lg px-2 py-1.5 text-sm" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+                    <option value="">No group</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                  </select>
+                  <input className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="Find a person" value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} />
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {people
+                      .filter((person) => `${person.name} ${person.role}`.toLowerCase().includes(personQuery.toLowerCase()))
+                      .slice(0, 20)
+                      .map((person) => (
+                        <label key={person.id} className="flex items-center gap-2 text-xs text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={picked.includes(person.id)}
+                            onChange={() => setPicked((current) => current.includes(person.id) ? current.filter((id) => id !== person.id) : [...current, person.id])}
+                          />
+                          <span>{person.name} · {person.role}</span>
+                        </label>
+                      ))}
+                  </div>
+                </>
               )}
               <button type="submit" className="w-full py-2 rounded-lg bg-primary text-white text-sm">
                 {toRole === "hostel" ? "Send to Hostel Warden" : "Send"}

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import AppNotification, DirectMessage, MessageAttachment, MessageThread, User
+from app.models import AppNotification, DirectMessage, MessageAttachment, MessageRecipient, MessageThread, PeopleGroup, PeopleGroupMember, User
 from app.security.auth import get_current_user, require_roles
 
 _UPLOAD_DIR = Path(__file__).resolve().parents[2] / "data" / "message_files"
@@ -44,6 +44,8 @@ class ThreadCreate(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
     category: str = "general"
     to_role: str = "admin"  # admin | faculty | hostel
+    group_id: Optional[int] = None
+    user_ids: list[int] = Field(default_factory=list)
 
 
 class ReplyIn(BaseModel):
@@ -63,7 +65,10 @@ async def _load_users(db: AsyncSession, ids: set[int]) -> dict[int, User]:
 
 
 def _thread_load():
-    return selectinload(MessageThread.messages).selectinload(DirectMessage.attachments)
+    return (
+        selectinload(MessageThread.messages).selectinload(DirectMessage.attachments),
+        selectinload(MessageThread.recipients),
+    )
 
 
 def _can_view(user: User, thread: MessageThread) -> bool:
@@ -71,7 +76,9 @@ def _can_view(user: User, thread: MessageThread) -> bool:
         return True
     if user.role == "hostel_admin" and (thread.category == "hostel" or thread.assignee_id == user.id):
         return True
-    return thread.created_by == user.id or thread.assignee_id == user.id
+    return thread.created_by == user.id or thread.assignee_id == user.id or any(
+        row.user_id == user.id for row in (thread.recipients or [])
+    )
 
 
 async def _save_attachments(db: AsyncSession, message: DirectMessage, files: list[UploadFile] | None) -> None:
@@ -115,6 +122,8 @@ def _serialize_thread(t: MessageThread, users: dict[int, User]) -> dict:
         "created_by_role": creator.role if creator else "",
         "assignee_id": t.assignee_id,
         "assignee_name": assignee.full_name if assignee else "",
+        "audience_label": getattr(t, "audience_label", "") or "",
+        "recipient_count": len(t.recipients or []),
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
         "messages": [
             {
@@ -171,20 +180,20 @@ async def list_threads(
     db: Annotated[AsyncSession, Depends(get_db)],
     status: Optional[str] = Query(default=None),
 ):
-    q = select(MessageThread).options(_thread_load()).order_by(MessageThread.updated_at.desc())
+    q = select(MessageThread).options(*_thread_load()).order_by(MessageThread.updated_at.desc())
+    mine = or_(
+        MessageThread.created_by == user.id,
+        MessageThread.assignee_id == user.id,
+        MessageThread.id.in_(select(MessageRecipient.thread_id).where(MessageRecipient.user_id == user.id)),
+    )
     if user.role in ("admin", "university_admin", "super_admin"):
         pass
-    elif user.role in ("faculty", "hod"):
-        q = q.where(
-            or_(
-                MessageThread.assignee_id == user.id,
-                MessageThread.created_by == user.id,
-            )
-        )
+    elif user.role in ("faculty", "hod", "school_dean", "director", "operator", "coe"):
+        q = q.where(mine)
     elif user.role == "hostel_admin":
-        q = q.where(or_(MessageThread.assignee_id == user.id, MessageThread.category == "hostel"))
+        q = q.where(or_(mine, MessageThread.category == "hostel"))
     else:
-        q = q.where(MessageThread.created_by == user.id)
+        q = q.where(mine)
     if status:
         q = q.where(MessageThread.status == status)
     threads = (await db.execute(q.limit(80))).scalars().all()
@@ -232,9 +241,106 @@ async def _recipient(db: AsyncSession, to_role: str, category: str) -> tuple[Opt
     return assignee_id, resolved
 
 
+def _group_family(groups: list[PeopleGroup], root_id: int) -> set[int]:
+    ids = {root_id}
+    growing = True
+    while growing:
+        growing = False
+        for group in groups:
+            if group.parent_id in ids and group.id not in ids:
+                ids.add(group.id)
+                growing = True
+    return ids
+
+
+async def _audience(db: AsyncSession, group_id: int | None, user_ids: list[int], sender_id: int) -> tuple[list[int], str]:
+    chosen: set[int] = set()
+    label_parts: list[str] = []
+    if group_id:
+        groups = list((await db.execute(select(PeopleGroup))).scalars().all())
+        group = next((item for item in groups if item.id == group_id), None)
+        if not group:
+            raise HTTPException(status_code=404, detail="That group was not found")
+        family = _group_family(groups, group.id)
+        members = (
+            await db.execute(select(PeopleGroupMember.user_id).where(PeopleGroupMember.group_id.in_(family)))
+        ).scalars().all()
+        chosen.update(int(item) for item in members)
+        label_parts.append(group.name)
+    if user_ids:
+        rows = (
+            await db.execute(select(User.id).where(User.id.in_(list({int(item) for item in user_ids})), User.is_active.is_(True)))
+        ).scalars().all()
+        chosen.update(int(item) for item in rows)
+        label_parts.append(f"{len(rows)} selected")
+    chosen.discard(sender_id)
+    if not chosen:
+        raise HTTPException(status_code=400, detail="Choose a group or at least one person")
+    if len(chosen) > 300:
+        raise HTTPException(status_code=400, detail="Choose 300 people or fewer")
+    return sorted(chosen), ", ".join(label_parts)[:200]
+
+
+async def _open_thread(
+    db: AsyncSession,
+    user: User,
+    *,
+    subject: str,
+    body: str,
+    to_role: str,
+    category: str,
+    group_id: int | None,
+    user_ids: list[int],
+    files: list[UploadFile] | None = None,
+) -> dict:
+    audience_ids: list[int] = []
+    audience_label = ""
+    if group_id or user_ids:
+        if user.role not in STAFF:
+            raise HTTPException(status_code=403, detail="Only faculty, staff, admin, and HoD can message a group or selected people")
+        audience_ids, audience_label = await _audience(db, group_id, user_ids, user.id)
+        category = "group"
+        assignee_id = None
+    else:
+        assignee_id, category = await _recipient(db, to_role, category)
+    thread = MessageThread(
+        subject=subject.strip(),
+        category=category,
+        created_by=user.id,
+        assignee_id=assignee_id,
+        status="open",
+        audience_label=audience_label,
+    )
+    db.add(thread)
+    await db.flush()
+    message = DirectMessage(thread_id=thread.id, sender_id=user.id, body=body.strip())
+    db.add(message)
+    await db.flush()
+    if files:
+        await _save_attachments(db, message, files)
+    for person_id in audience_ids:
+        db.add(MessageRecipient(thread_id=thread.id, user_id=person_id))
+    thread.updated_at = datetime.utcnow()
+    targets = set(audience_ids)
+    if assignee_id:
+        targets.add(assignee_id)
+    targets.discard(user.id)
+    for person_id in targets:
+        await _notify(
+            db,
+            user_id=person_id,
+            kind="message",
+            title=f"New message from {user.full_name}",
+            body=f"{user.full_name} messaged you: {thread.subject}",
+            thread_id=thread.id,
+        )
+    await db.flush()
+    return await _thread_out(db, thread.id)
+
+
 async def _thread_out(db: AsyncSession, thread_id: int) -> dict:
     thread = (
-        await db.execute(select(MessageThread).where(MessageThread.id == thread_id).options(_thread_load()))
+        await db.execute(select(MessageThread).where(MessageThread.id == thread_id).options(*_thread_load()))
     ).scalar_one()
     ids = {thread.created_by}
     if thread.assignee_id:
@@ -244,44 +350,60 @@ async def _thread_out(db: AsyncSession, thread_id: int) -> dict:
     return _serialize_thread(thread, await _load_users(db, ids))
 
 
+@router.get("/messages/audience")
+async def message_audience(
+    user: Annotated[User, Depends(require_roles(*STAFF))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if user.role not in STAFF:
+        raise HTTPException(status_code=403, detail="Only faculty, staff, admin, and HoD can choose recipients")
+    groups = list((await db.execute(select(PeopleGroup).order_by(PeopleGroup.id))).scalars().all())
+
+    def path(group: PeopleGroup) -> str:
+        names = [group.name]
+        parent_id = group.parent_id
+        seen = {group.id}
+        while parent_id and parent_id not in seen:
+            seen.add(parent_id)
+            parent = next((item for item in groups if item.id == parent_id), None)
+            if not parent:
+                break
+            names.append(parent.name)
+            parent_id = parent.parent_id
+        return " / ".join(reversed(names))
+
+    people = (
+        await db.execute(select(User).where(User.is_active.is_(True)).order_by(User.full_name).limit(300))
+    ).scalars().all()
+    return {
+        "groups": [{"id": group.id, "name": path(group)} for group in groups],
+        "users": [
+            {"id": person.id, "name": person.full_name or person.username, "username": person.username, "role": person.role}
+            for person in people
+            if person.id != user.id
+        ],
+    }
+
+
 @router.post("/messages/threads")
 async def create_thread(
     body: ThreadCreate,
-    user: Annotated[User, Depends(require_roles("student", "faculty", "hod"))],
+    user: Annotated[User, Depends(require_roles("student", *STAFF))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    assignee_id, category = await _recipient(db, body.to_role, body.category)
-    thread = MessageThread(
-        subject=body.subject.strip(),
-        category=category,
-        created_by=user.id,
-        assignee_id=assignee_id,
-        status="open",
+    return await _open_thread(
+        db,
+        user,
+        subject=body.subject,
+        body=body.body,
+        to_role=body.to_role,
+        category=body.category,
+        group_id=body.group_id,
+        user_ids=body.user_ids,
     )
-    db.add(thread)
-    await db.flush()
-    db.add(DirectMessage(thread_id=thread.id, sender_id=user.id, body=body.body.strip()))
-    thread.updated_at = datetime.utcnow()
-    if assignee_id and assignee_id != user.id:
-        await _notify(
-            db,
-            user_id=assignee_id,
-            kind="message",
-            title=f"New message from {user.full_name}",
-            body=f"{user.full_name} messaged you: {thread.subject}",
-            thread_id=thread.id,
-            link="/messages",
-        )
-    await db.flush()
-    await db.refresh(thread, attribute_names=["messages"])
-    ids = {user.id}
-    if assignee_id:
-        ids.add(assignee_id)
-    users = await _load_users(db, ids)
-    return _serialize_thread(thread, users)
 
 
-FacultySend = require_roles("faculty", "hod", "school_dean")
+FacultySend = require_roles(*STAFF)
 
 
 @router.post("/messages/threads/with-files")
@@ -291,6 +413,8 @@ async def create_thread_with_files(
     subject: str = Form(min_length=3, max_length=200),
     body: str = Form(default=""),
     to_role: str = Form(default="admin"),
+    group_id: Optional[int] = Form(default=None),
+    user_ids: str = Form(default=""),
     files: list[UploadFile] = File(default=[]),
 ):
     text = (body or "").strip()
@@ -298,32 +422,18 @@ async def create_thread_with_files(
         raise HTTPException(status_code=400, detail="Write a message or attach a file")
     if not text:
         text = "Please see the attached file."
-    assignee_id, category = await _recipient(db, to_role, "general")
-    thread = MessageThread(
-        subject=subject.strip(),
-        category=category,
-        created_by=user.id,
-        assignee_id=assignee_id,
-        status="open",
+    picked = [int(part) for part in user_ids.replace(" ", "").split(",") if part.isdigit()]
+    return await _open_thread(
+        db,
+        user,
+        subject=subject,
+        body=text,
+        to_role=to_role,
+        category="general",
+        group_id=group_id,
+        user_ids=picked,
+        files=files,
     )
-    db.add(thread)
-    await db.flush()
-    message = DirectMessage(thread_id=thread.id, sender_id=user.id, body=text)
-    db.add(message)
-    await db.flush()
-    await _save_attachments(db, message, files)
-    thread.updated_at = datetime.utcnow()
-    if assignee_id and assignee_id != user.id:
-        await _notify(
-            db,
-            user_id=assignee_id,
-            kind="message",
-            title=f"New message from {user.full_name}",
-            body=f"{user.full_name} messaged you: {thread.subject}",
-            thread_id=thread.id,
-        )
-    await db.flush()
-    return await _thread_out(db, thread.id)
 
 
 @router.post("/messages/threads/{thread_id}/reply-with-files")
@@ -335,7 +445,7 @@ async def reply_with_files(
     files: list[UploadFile] = File(default=[]),
 ):
     thread = (
-        await db.execute(select(MessageThread).where(MessageThread.id == thread_id).options(_thread_load()))
+        await db.execute(select(MessageThread).where(MessageThread.id == thread_id).options(*_thread_load()))
     ).scalar_one_or_none()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -358,6 +468,7 @@ async def reply_with_files(
     targets = {thread.created_by}
     if thread.assignee_id:
         targets.add(thread.assignee_id)
+    targets.update(row.user_id for row in (thread.recipients or []))
     for target in targets:
         if target == user.id:
             continue
@@ -383,7 +494,11 @@ async def download_attachment(
         await db.execute(
             select(MessageAttachment)
             .where(MessageAttachment.id == attachment_id)
-            .options(selectinload(MessageAttachment.message).selectinload(DirectMessage.thread))
+            .options(
+                selectinload(MessageAttachment.message)
+                .selectinload(DirectMessage.thread)
+                .selectinload(MessageThread.recipients)
+            )
         )
     ).scalar_one_or_none()
     if not row or not row.message or not row.message.thread:
@@ -405,7 +520,7 @@ async def reply_thread(
 ):
     thread = (
         await db.execute(
-            select(MessageThread).where(MessageThread.id == thread_id).options(_thread_load())
+            select(MessageThread).where(MessageThread.id == thread_id).options(*_thread_load())
         )
     ).scalar_one_or_none()
     if not thread:
@@ -426,6 +541,7 @@ async def reply_thread(
         or is_hostel
         or thread.created_by == user.id
         or thread.assignee_id == user.id
+        or any(row.user_id == user.id for row in (thread.recipients or []))
     )
     if not allowed:
         raise HTTPException(status_code=403, detail="Not your thread")
@@ -436,6 +552,7 @@ async def reply_thread(
     targets = {thread.created_by, user.id}
     if thread.assignee_id:
         targets.add(thread.assignee_id)
+    targets.update(row.user_id for row in (thread.recipients or []))
     for target in targets:
         if target == user.id:
             continue
@@ -464,7 +581,7 @@ async def redirect_thread(
 ):
     thread = (
         await db.execute(
-            select(MessageThread).where(MessageThread.id == thread_id).options(_thread_load())
+            select(MessageThread).where(MessageThread.id == thread_id).options(*_thread_load())
         )
     ).scalar_one_or_none()
     if not thread:

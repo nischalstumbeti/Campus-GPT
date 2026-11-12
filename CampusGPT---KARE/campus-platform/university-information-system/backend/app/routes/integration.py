@@ -1004,6 +1004,8 @@ class ThreadCreateIn(BaseModel):
     body: str
     category: str = "general"
     to_role: str = "admin"
+    group_id: Optional[int] = None
+    user_ids: list[int] = Field(default_factory=list)
 
 
 class ReplyIn(BaseModel):
@@ -1073,6 +1075,21 @@ async def integration_list_threads(
     if user.role == "student" and not await _check_consent(db, user.id, "messaging.inbox"):
         raise HTTPException(status_code=403, detail="CONSENT_DENIED")
     return await msg_routes.list_threads(user=user, db=db)
+
+
+@router.get("/messages/audience")
+async def integration_message_audience(
+    _: Annotated[bool, Depends(_require_integration_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    authorization: Annotated[Optional[str], Header()] = None,
+    x_uis_username: Annotated[Optional[str], Header(alias="X-UIS-Username")] = None,
+):
+    from app.routes import messages as msg_routes
+
+    user = await _resolve_subject_user(
+        db, authorization=authorization, x_uis_username=x_uis_username, require_student=False
+    )
+    return await msg_routes.message_audience(user=user, db=db)
 
 
 @router.post("/messages/threads")

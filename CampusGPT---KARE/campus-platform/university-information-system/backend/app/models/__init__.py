@@ -535,10 +535,12 @@ class MessageThread(Base):
     assignee_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="open")
     redirected_to: Mapped[str] = mapped_column(String(64), default="")
+    audience_label: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     messages: Mapped[list["DirectMessage"]] = relationship(back_populates="thread", cascade="all, delete-orphan")
+    recipients: Mapped[list["MessageRecipient"]] = relationship(back_populates="thread", cascade="all, delete-orphan")
 
 
 class DirectMessage(Base):
@@ -555,6 +557,19 @@ class DirectMessage(Base):
     attachments: Mapped[list["MessageAttachment"]] = relationship(
         back_populates="message", cascade="all, delete-orphan"
     )
+
+
+class MessageRecipient(Base):
+    """One person included when staff send a message to a group or a chosen list."""
+
+    __tablename__ = "message_recipients"
+    __table_args__ = (UniqueConstraint("thread_id", "user_id", name="uq_message_recipient"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    thread_id: Mapped[int] = mapped_column(ForeignKey("message_threads.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    thread: Mapped["MessageThread"] = relationship(back_populates="recipients")
 
 
 class MessageAttachment(Base):
