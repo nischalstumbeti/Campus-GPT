@@ -97,7 +97,7 @@ async def _get(path: str, uis_username: str, purpose: str = "Campus-GPT assistan
     s = get_settings()
     url = f"{s.UIS_API_BASE_URL.rstrip('/')}{path}"
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             r = await client.get(url, headers=await _headers(uis_username), params={"purpose": purpose})
     except httpx.HTTPError as exc:
         logger.exception("UIS request failed: %s", path)
@@ -231,24 +231,34 @@ async def get_achievements(uis_username: str) -> dict:
     return await _get("/api/v1/integration/campus-gpt/student/achievements", uis_username, "Career assistance")
 
 
+_snapshot_cache: tuple[float, dict] = (0.0, {})
+
+
 async def get_campus_snapshot() -> dict[str, Any]:
     """Aggregate UIS figures. Empty dict when the university API is unreachable."""
+    global _snapshot_cache
     if not uis_enabled():
         return {}
+    now = time.monotonic()
+    cached_at, cached = _snapshot_cache
+    if now - cached_at < 300:
+        return cached
     s = get_settings()
     url = f"{s.UIS_API_BASE_URL.rstrip('/')}/api/v1/integration/campus-gpt/campus-snapshot"
+    data: dict = {}
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=2.5) as client:
             r = await client.get(
                 url,
                 headers={"X-API-Key": s.UIS_INTEGRATION_API_KEY, "Accept": "application/json"},
             )
-        if r.status_code >= 400:
-            return {}
-        data = r.json()
-        return data if isinstance(data, dict) else {}
-    except httpx.HTTPError:
-        return {}
+        if r.status_code < 400:
+            parsed = r.json()
+            data = parsed if isinstance(parsed, dict) else {}
+    except (httpx.HTTPError, ValueError):
+        data = {}
+    _snapshot_cache = (now, data)
+    return data
 
 
 async def get_announcements(*, role: str | None = None, department_code: str | None = None) -> list[dict]:

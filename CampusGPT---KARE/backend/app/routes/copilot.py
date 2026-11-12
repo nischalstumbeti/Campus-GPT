@@ -212,7 +212,7 @@ async def letters(body: LetterRequest, db: AsyncSession = Depends(get_db), user:
         "formal is the full letter. email is a short email with a subject line. short is two sentences."
     )
     try:
-        raw = await _gemini_generate(genai, prompt)
+        raw = await _gemini_generate(genai, prompt, max_output_tokens=700)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"The AI could not write the letter. {exc}"[:400])
     match = re.search(r"\{.*\}", raw or "", re.DOTALL)

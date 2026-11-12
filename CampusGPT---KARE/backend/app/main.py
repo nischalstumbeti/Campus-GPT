@@ -64,9 +64,28 @@ async def lifespan(app: FastAPI):
         print(f"Supabase storage init skipped: {exc}")
     stop = asyncio.Event()
     worker = asyncio.create_task(_outbox_worker(stop))
+    awake = asyncio.create_task(_stay_awake(stop))
     yield
     stop.set()
     await worker
+    await awake
+
+
+async def _stay_awake(stop: asyncio.Event) -> None:
+    """Ping this public URL so the free host does not sleep between questions."""
+    import httpx
+
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=8 * 60)
+            return
+        except asyncio.TimeoutError:
+            pass
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                await client.get("https://campus-gpt-api.onrender.com/health")
+        except Exception:
+            pass
 
 
 _settings = get_settings()

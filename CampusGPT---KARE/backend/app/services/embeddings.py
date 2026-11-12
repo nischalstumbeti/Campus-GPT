@@ -33,8 +33,9 @@ async def get_embedding(text: str) -> list[float]:
         try:
             import google.generativeai as genai
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            result = await asyncio.to_thread(
-                genai.embed_content, model=EMBED_MODEL, content=payload
+            result = await asyncio.wait_for(
+                asyncio.to_thread(genai.embed_content, model=EMBED_MODEL, content=payload),
+                timeout=4,
             )
             emb = result.get("embedding", []) if result else []
             if emb and len(emb) == dim:

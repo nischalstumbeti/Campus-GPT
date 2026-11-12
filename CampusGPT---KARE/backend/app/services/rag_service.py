@@ -79,7 +79,7 @@ def _chat_model_candidates() -> list[str]:
     return out
 
 
-async def _gemini_generate(genai, prompt: str) -> str:
+async def _gemini_generate(genai, prompt: str, max_output_tokens: int = 420) -> str:
     """Call Gemini with model fallbacks when a model id is retired/unavailable."""
     global _resolved_chat_model
     import logging
@@ -96,7 +96,7 @@ async def _gemini_generate(genai, prompt: str) -> str:
             response = await asyncio.to_thread(
                 model.generate_content,
                 prompt,
-                generation_config={"temperature": 0.2, "max_output_tokens": 900},
+                generation_config={"temperature": 0.2, "max_output_tokens": max_output_tokens},
             )
             text = response.text if response and hasattr(response, "text") and response.text else ""
             if text.strip():
@@ -563,6 +563,8 @@ async def rag_pipeline(
         "denied": denied,
     }
 
+    has_key = bool((_live_settings().GEMINI_API_KEY or "").strip())
+    retrieve_task = asyncio.create_task(retrieve_context(query)) if has_key else None
     try:
         from app.services.live_campus import live_records_text
 
@@ -628,7 +630,10 @@ async def rag_pipeline(
             **extras,
         }
 
-    chunks, sources, retrieval_score = await retrieve_context(query)
+    if retrieve_task is None:
+        chunks, sources, retrieval_score = [], [], 0.0
+    else:
+        chunks, sources, retrieval_score = await retrieve_task
     if academic_context:
         chunks = [academic_context] + list(chunks)
         sources = [{"source": "Academic database", "excerpt": academic_context[:180], "relevance": 1.0}] + list(sources)
