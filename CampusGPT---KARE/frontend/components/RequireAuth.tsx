@@ -12,7 +12,7 @@ export default function RequireAuth({
   children: React.ReactNode;
   roles?: string[];
 }) {
-  const { user, loading, offline, hasToken } = useAuth();
+  const { user, loading, offline, problem, hasToken } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -37,6 +37,13 @@ export default function RequireAuth({
   }
   if (offline && hasToken && !user) {
     return <InternetIssueScreen />;
+  }
+  if (problem && hasToken && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6 text-center">
+        <p className="text-sm text-gray-700 max-w-md">{problem}</p>
+      </div>
+    );
   }
   if (!user) {
     return (

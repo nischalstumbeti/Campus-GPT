@@ -7,6 +7,7 @@ API responses never return secret values.
 from __future__ import annotations
 
 import json
+import os
 import smtplib
 import ssl
 from email.mime.text import MIMEText
@@ -179,7 +180,11 @@ class IntegrationHub:
         values: dict[str, Any] = {}
         for field in spec["fields"]:
             key = field["key"]
-            raw = stored.get(key, env.get(field["env"], field.get("default", "")))
+            raw = stored.get(key)
+            if raw in ("", None):
+                raw = os.environ.get(field["env"])
+            if raw in ("", None):
+                raw = env.get(field["env"], field.get("default", ""))
             if field["type"] == "bool":
                 values[key] = _truthy(raw) if raw not in ("", None) else bool(field.get("default", False))
             elif field["type"] == "number":

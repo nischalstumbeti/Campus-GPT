@@ -1,4 +1,4 @@
-import { apiFetch, isInternetIssue, notifyInternetIssue } from "./network";
+import { apiFetch, isOffline, notifyInternetIssue } from "./network";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
 
@@ -43,13 +43,12 @@ export async function fetchMe(): Promise<AuthUser | null> {
       clearAuth();
       return null;
     }
-    if (!res.ok) return null;
+    if (!res.ok) {
+      throw new Error(`Sign-in check failed (${res.status}).`);
+    }
     return res.json();
   } catch (err) {
-    if (isInternetIssue(err)) {
-      notifyInternetIssue();
-      throw err;
-    }
-    return null;
+    if (isOffline()) notifyInternetIssue();
+    throw err instanceof Error ? err : new Error("The Campus-GPT API did not respond.");
   }
 }

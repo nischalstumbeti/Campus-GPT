@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { fetchMe, clearAuth, getToken, type AuthUser } from "@/lib/auth";
-import { isInternetIssue } from "@/lib/network";
 
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
+  const [problem, setProblem] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -16,9 +16,10 @@ export function useAuth() {
       if (!cancelled) {
         timedOut = true;
         setLoading(false);
-        setOffline(true);
+        if (typeof navigator !== "undefined" && navigator.onLine === false) setOffline(true);
+        else setProblem("The Campus-GPT API did not answer in time. It may still be starting.");
       }
-    }, 12000);
+    }, 40000);
 
     fetchMe()
       .then((u) => {
@@ -28,8 +29,8 @@ export function useAuth() {
       })
       .catch((err) => {
         if (cancelled || timedOut) return;
-        if (isInternetIssue(err)) setOffline(true);
-        else setUser(null);
+        if (typeof navigator !== "undefined" && navigator.onLine === false) setOffline(true);
+        else setProblem(err instanceof Error && err.message ? err.message : "The Campus-GPT API did not respond.");
       })
       .finally(() => {
         if (!cancelled && !timedOut) setLoading(false);
@@ -48,5 +49,5 @@ export function useAuth() {
     window.location.href = "/";
   };
 
-  return { user, loading, logout, isLoggedIn: !!user, offline, hasToken: !!getToken() };
+  return { user, loading, logout, isLoggedIn: !!user, offline, problem, hasToken: !!getToken() };
 }

@@ -52,9 +52,11 @@ def _apply(provider: str, cfg: dict) -> None:
         settings.S3_ACCESS_KEY = str(cfg.get("access_key") or "")
         settings.S3_SECRET_KEY = str(cfg.get("secret_key") or "")
     elif provider == "gemini":
-        settings.GEMINI_API_KEY = str(cfg.get("api_key") or "").strip()
-        if str(cfg.get("model") or "").strip():
-            settings.GEMINI_CHAT_MODEL = str(cfg.get("model")).strip()
+        key = str(cfg.get("api_key") or "").strip() or (settings.GEMINI_API_KEY or "").strip()
+        settings.GEMINI_API_KEY = key
+        model = str(cfg.get("model") or "").strip()
+        if model:
+            settings.GEMINI_CHAT_MODEL = model
         try:
             from app.services.rag_service import reset_gemini
 

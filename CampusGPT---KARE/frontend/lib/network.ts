@@ -9,23 +9,13 @@ export class InternetIssueError extends Error {
   }
 }
 
+export function isOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 export function isInternetIssue(err: unknown): boolean {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
-  if (err instanceof InternetIssueError) return true;
-  const msg = err instanceof Error ? `${err.name} ${err.message}` : String(err ?? "");
-  const lower = msg.toLowerCase();
-  return (
-    lower.includes("failed to fetch") ||
-    lower.includes("networkerror") ||
-    lower.includes("network request failed") ||
-    lower.includes("load failed") ||
-    lower.includes("err_internet") ||
-    lower.includes("err_network") ||
-    lower.includes("err_name_not_resolved") ||
-    lower.includes("err_connection") ||
-    lower.includes("net::err") ||
-    lower.includes("internet issue")
-  );
+  if (isOffline()) return true;
+  return err instanceof InternetIssueError;
 }
 
 export function notifyInternetIssue() {
@@ -34,7 +24,7 @@ export function notifyInternetIssue() {
 }
 
 export function userFacingError(err: unknown, fallback = "Something went wrong"): string {
-  if (isInternetIssue(err)) {
+  if (isOffline()) {
     notifyInternetIssue();
     return INTERNET_ISSUE_MESSAGE;
   }
@@ -57,10 +47,14 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     notifyInternetOk();
     return res;
   } catch (err) {
-    if (isInternetIssue(err)) {
+    if (isOffline()) {
       notifyInternetIssue();
       throw new InternetIssueError();
     }
-    throw err;
+    const message = err instanceof Error ? err.message : "";
+    if (!message || message === "Failed to fetch" || message === "Load failed" || message === "NetworkError when attempting to fetch resource.") {
+      throw new Error("The Campus-GPT API did not respond.");
+    }
+    throw err instanceof Error ? err : new Error(message);
   }
 }

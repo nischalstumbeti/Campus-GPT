@@ -336,7 +336,8 @@ async def forecast(
         except uis_client.UisConsentDenied:
             raise HTTPException(status_code=403, detail="Attendance consent is off for this account.")
         except uis_client.UisClientError as exc:
-            raise HTTPException(status_code=502, detail=str(exc) or "Attendance records could not be loaded.")
+            detail = (exc.detail or str(exc) or "Attendance records could not be loaded.").strip()
+            raise HTTPException(status_code=502, detail=detail[:400])
         try:
             marks = uis_acad.normalize_marks(await uis_client.get_marks(student.uis_username))
         except Exception:

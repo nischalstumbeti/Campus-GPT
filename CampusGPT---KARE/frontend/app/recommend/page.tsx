@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import CloudBackground from "@/components/CloudBackground";
-import { apiFetch, INTERNET_ISSUE_MESSAGE } from "@/lib/network";
+import { apiFetch, userFacingError } from "@/lib/network";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
 
@@ -62,7 +62,7 @@ export default function RecommendPage() {
       const data = await res.json();
       setResult(data.recommendations || "No recommendations generated.");
     } catch (e) {
-      setResult(INTERNET_ISSUE_MESSAGE);
+      setResult(userFacingError(e, "The recommendation could not be loaded."));
     } finally {
       setLoading(false);
     }
