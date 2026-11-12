@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import BrandLogo from "@/components/BrandLogo";
+import { useBranding } from "@/components/ThemeProvider";
 import { motion } from "framer-motion";
 import {
   MessageCircle,
@@ -48,6 +49,7 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
+  const branding = useBranding();
   return (
     <div className="min-h-screen bg-[#FFFFFF] font-sans overflow-x-hidden relative">
       <CloudBackground variant="hero" />
@@ -55,15 +57,9 @@ export default function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#7C5AED]/10">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Image
-              src="/kare-logo.png"
-              alt="Kalasalingam Academy of Research and Education"
-              width={48}
-              height={48}
-              className="object-contain"
-            />
+            <BrandLogo size={48} />
             <div>
-              <span className="font-bold text-lg text-primary block">Campus-GPT</span>
+              <span className="font-bold text-lg text-primary block">{branding.app_name || "Campus-GPT"}</span>
               <span className="text-xs text-gray-500">Kalasalingam Academy of Research and Education</span>
             </div>
           </div>

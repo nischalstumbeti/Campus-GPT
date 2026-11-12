@@ -13,6 +13,7 @@ export type Branding = {
   background_image_url: string;
   background_overlay: string;
   login_background_url: string;
+  logo_url: string;
   app_name: string;
   updated_at?: string | null;
   updated_by?: string | null;
@@ -32,6 +33,7 @@ export const DEFAULT_BRANDING: Branding = {
   background_image_url: "",
   background_overlay: "0.88",
   login_background_url: "",
+  logo_url: "",
   app_name: "Campus-GPT",
 };
 

@@ -44,6 +44,7 @@ def _ser(row: BrandingSettings | None) -> dict:
         "background_image_url": row.background_image_url or "",
         "background_overlay": row.background_overlay or DEFAULT_BRANDING["background_overlay"],
         "login_background_url": row.login_background_url or "",
+        "logo_url": row.logo_url or "",
         "app_name": row.app_name or DEFAULT_BRANDING["app_name"],
         "updated_by": row.updated_by,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -74,6 +75,7 @@ class BrandingIn(BaseModel):
     background_image_url: Optional[str] = None
     background_overlay: Optional[str] = Field(default=None, max_length=16)
     login_background_url: Optional[str] = None
+    logo_url: Optional[str] = None
     app_name: Optional[str] = Field(default=None, max_length=120)
 
 
@@ -157,7 +159,12 @@ async def upload_background(
         public_url = f"data:{mime};base64,{b64}"
 
     row = await _get_or_create(db)
-    field = "login_background_url" if kind == "login" else "background_image_url"
+    if kind == "login":
+        field = "login_background_url"
+    elif kind == "logo":
+        field = "logo_url"
+    else:
+        field = "background_image_url"
     setattr(row, field, public_url)
     row.updated_by = str(user.get("email") or user.get("sub") or "admin")
     row.updated_at = datetime.utcnow()

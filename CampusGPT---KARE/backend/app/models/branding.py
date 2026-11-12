@@ -26,6 +26,7 @@ class BrandingSettings(Base):
     background_image_url = Column(Text, default="")
     background_overlay = Column(String(16), default="0.88")
     login_background_url = Column(Text, default="")
+    logo_url = Column(Text, default="")
     app_name = Column(String(120), default="Campus-GPT")
     updated_by = Column(String(64), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -46,5 +47,6 @@ DEFAULT_BRANDING = {
     "background_image_url": "",
     "background_overlay": "0.88",
     "login_background_url": "",
+    "logo_url": "",
     "app_name": "Campus-GPT",
 }

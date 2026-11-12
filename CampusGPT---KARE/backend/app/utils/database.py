@@ -81,6 +81,7 @@ async def init_db():
             "ALTER TABLE query_logs ADD COLUMN IF NOT EXISTS latency_ms DOUBLE PRECISION",
             "ALTER TABLE query_logs ADD COLUMN IF NOT EXISTS retrieval_score DOUBLE PRECISION",
             "ALTER TABLE query_logs ADD COLUMN IF NOT EXISTS agent_type VARCHAR(40)",
+            "ALTER TABLE branding_settings ADD COLUMN IF NOT EXISTS logo_url TEXT",
         ]
         if "sqlite" in str(database_url):
             # SQLite does not support IF NOT EXISTS on ADD COLUMN in older versions — try/except below
@@ -97,6 +98,7 @@ async def init_db():
                 "ALTER TABLE announcements ADD COLUMN created_at DATETIME",
                 "ALTER TABLE fee_payments ADD COLUMN receipt_no VARCHAR(64) DEFAULT ''",
                 "ALTER TABLE notification_prefs ADD COLUMN inapp_leave BOOLEAN DEFAULT 1",
+                "ALTER TABLE branding_settings ADD COLUMN logo_url TEXT",
             ]
         for stmt in alter_stmts:
             try:

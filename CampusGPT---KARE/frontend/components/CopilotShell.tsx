@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import BrandLogo from "@/components/BrandLogo";
+import { useBranding } from "@/components/ThemeProvider";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
@@ -52,7 +53,7 @@ const ADMIN: Item[] = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/insight", label: "Thinking" },
   { href: "/admin/connections", label: "Connections" },
-  { href: "/admin/cms", label: "Admin CMS" },
+  { href: "/admin/cms", label: "CMS" },
   { href: "/admin/observability", label: "Observability" },
   { href: "/admin/audit", label: "Audit trail" },
   { href: "/admin/upload", label: "Knowledge" },
@@ -117,6 +118,7 @@ export default function CopilotShell({
 }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const branding = useBranding();
   const role = user?.role || "student";
   const links =
     role === "admin" || role === "super_admin"
@@ -136,9 +138,9 @@ export default function CopilotShell({
     <div className={fill ? "h-[100dvh] flex overflow-hidden bg-[#FAFAFE]" : "min-h-screen flex bg-[#FAFAFE]"}>
       <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-[#7C5AED]/10 bg-white">
         <Link href="/workspace" className="flex items-center gap-2 px-4 py-4 border-b border-gray-100">
-          <Image src="/kare-logo.png" alt="KARE" width={32} height={32} className="object-contain" />
+          <BrandLogo size={32} />
           <div>
-            <p className="font-bold text-sm text-primary leading-tight">Campus-GPT</p>
+            <p className="font-bold text-sm text-primary leading-tight">{branding.app_name || "Campus-GPT"}</p>
             <p className="text-[10px] text-gray-500">KARE AI companion</p>
           </div>
         </Link>

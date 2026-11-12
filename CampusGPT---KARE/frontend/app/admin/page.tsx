@@ -378,8 +378,8 @@ function AdminInner() {
               <FileUp className="w-6 h-6 text-amber-700" />
             </div>
             <div>
-              <h3 className="font-semibold text-primary">Admin CMS</h3>
-              <p className="text-gray-600 text-sm">Branding, colors, fonts, backgrounds, marquee</p>
+              <h3 className="font-semibold text-primary">CMS</h3>
+              <p className="text-gray-600 text-sm">Branding, logo, colors, and the marquee</p>
             </div>
           </Link>
 

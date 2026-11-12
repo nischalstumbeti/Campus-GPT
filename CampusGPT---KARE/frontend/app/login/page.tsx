@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import BrandLogo from "@/components/BrandLogo";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, LogIn, Mail, Lock } from "lucide-react";
 import CloudBackground from "@/components/CloudBackground";
@@ -179,7 +179,7 @@ function LoginForm() {
 
           <div className="rounded-2xl bg-white border border-gray-200 shadow-xl shadow-gray-200/50 p-8">
             <div className="flex items-center gap-3 mb-6">
-              <Image src="/kare-logo.png" alt="KARE" width={48} height={48} className="object-contain" />
+              <BrandLogo size={48} />
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Welcome back</h1>
                 <p className="text-sm text-gray-500">Sign in to Campus-GPT · KARE</p>

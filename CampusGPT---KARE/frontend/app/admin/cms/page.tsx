@@ -142,7 +142,7 @@ function CmsInner() {
     }
   };
 
-  const uploadBg = async (kind: "app" | "login", file: File | null) => {
+  const uploadBg = async (kind: "app" | "login" | "logo", file: File | null) => {
     if (!file) return;
     setBrandMsg("");
     const fd = new FormData();
@@ -160,7 +160,7 @@ function CmsInner() {
       const b = { ...DEFAULT_BRANDING, ...data.branding };
       setBranding(b);
       applyBrandingToDocument(b);
-      setBrandMsg(`${kind === "login" ? "Login" : "App"} background uploaded.`);
+      setBrandMsg(kind === "logo" ? "Logo updated." : `${kind === "login" ? "Login" : "App"} background uploaded.`);
     } catch (err) {
       setBrandMsg(err instanceof Error ? err.message : "Upload failed");
     }
@@ -203,9 +203,9 @@ function CmsInner() {
     <CopilotShell title="Admin CMS">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-primary">Admin CMS</h1>
+          <h1 className="text-2xl font-bold text-primary">CMS</h1>
           <p className="text-sm text-gray-600">
-            Admin login only — manage branding (colors, fonts, backgrounds) and the campus marquee ticker.
+            Branding, the campus logo, colors, fonts, backgrounds, and the marquee ticker.
           </p>
         </div>
 
@@ -217,7 +217,7 @@ function CmsInner() {
               tab === "branding" ? "bg-primary text-white" : "bg-gray-50 text-gray-700"
             }`}
           >
-            Branding & theme
+            Branding and logo
           </button>
           <button
             type="button"
@@ -244,6 +244,33 @@ function CmsInner() {
                   onChange={(e) => setBranding({ ...branding, app_name: e.target.value })}
                 />
               </label>
+              <div className="flex items-center gap-3">
+                {branding.logo_url ? (
+                  <img src={branding.logo_url} alt="" className="h-14 w-14 object-contain rounded border bg-white" />
+                ) : (
+                  <div className="h-14 w-14 rounded border bg-gray-50 text-[10px] text-gray-400 flex items-center justify-center text-center px-1">
+                    Default logo
+                  </div>
+                )}
+                <div className="text-sm">
+                  <span className="text-xs text-gray-500 block">Logo</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    className="mt-1 text-xs"
+                    onChange={(e) => uploadBg("logo", e.target.files?.[0] || null)}
+                  />
+                  {branding.logo_url ? (
+                    <button
+                      type="button"
+                      className="mt-1 text-xs text-red-600"
+                      onClick={() => setBranding({ ...branding, logo_url: "" })}
+                    >
+                      Remove logo on save
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
             <div className="rounded-2xl border border-gray-100 bg-white p-4 space-y-3">
