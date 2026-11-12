@@ -331,12 +331,60 @@ async def forecast(
     await _require_assist(db, user)
     student, source = await _student_or_404(db, user)
     if isinstance(student, LinkedStudent):
-        rows = uis_acad.normalize_attendance(await uis_client.get_attendance(student.uis_username))
-        data = uis_acad.forecast_from_attendance(rows)
-        data["eligibility"] = uis_acad.exam_eligibility(rows)
+        try:
+            attendance = uis_acad.normalize_attendance(await uis_client.get_attendance(student.uis_username))
+        except uis_client.UisConsentDenied:
+            raise HTTPException(status_code=403, detail="Attendance consent is off for this account.")
+        except uis_client.UisClientError as exc:
+            raise HTTPException(status_code=502, detail=str(exc) or "Attendance records could not be loaded.")
+        try:
+            marks = uis_acad.normalize_marks(await uis_client.get_marks(student.uis_username))
+        except Exception:
+            marks = []
+        data = uis_acad.forecast_page(attendance, marks, student.overall_attendance)
+        data["eligibility"] = uis_acad.exam_eligibility(attendance)
         data["source"] = source
+        reading = await _forecast_reading(data)
+        if reading:
+            data["reading"] = reading
         return data
-    return await acad.forecast_academics(db, student)
+    data = await acad.forecast_academics(db, student)
+    reading = await _forecast_reading(data)
+    if reading:
+        data["reading"] = reading
+    return data
+
+
+async def _forecast_reading(data: dict) -> str:
+    """Gemini explains the already counted rows. It does not replace them."""
+    from app.config import get_settings
+    from app.services.rag_service import _gemini_generate, _get_genai
+
+    if not (get_settings().GEMINI_API_KEY or "").strip():
+        return ""
+    genai = _get_genai()
+    if not genai:
+        return ""
+    lines = [
+        f"Overall attendance: {data.get('overall_attendance')} percent.",
+        str(data.get("summary") or ""),
+    ]
+    for course in data.get("courses") or []:
+        lines.append(
+            f"{course.get('course_code')} {course.get('course_name')}: now {course.get('current_attendance')} percent, "
+            f"if attend all {course.get('if_attend_all')} percent, can miss {course.get('can_miss')}, "
+            f"predicted internal {course.get('predicted_internal')}, risk {course.get('risk')}."
+        )
+    prompt = (
+        "You are the campus forecast desk. Write four short plain sentences for this student. "
+        "Use only the figures below. Do not change any number. Do not mention other students. "
+        "If a predicted internal is missing, say it was not recorded.\n\n"
+        + "\n".join(lines)
+    )
+    try:
+        return (await _gemini_generate(genai, prompt)).strip()
+    except Exception:
+        return ""
 
 
 @router.post("/academic/drafts")

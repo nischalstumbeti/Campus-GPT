@@ -209,6 +209,87 @@ def exam_eligibility(attendance_rows: list[dict], threshold: float = 75.0) -> di
     }
 
 
+def _pct(part: float, whole: float) -> float:
+    if whole <= 0:
+        return 0.0
+    return round(100.0 * part / whole, 1)
+
+
+def forecast_page(attendance_rows: list[dict], marks_rows: list[dict] | None = None, overall: float | None = None) -> dict[str, Any]:
+    """Shape used by the student Forecast page. Figures come only from the supplied rows."""
+    by_course: dict[str, list[dict]] = {}
+    for mark in marks_rows or []:
+        by_course.setdefault(str(mark.get("course_code") or ""), []).append(mark)
+    courses = []
+    warnings = []
+    for row in attendance_rows:
+        name = str(row.get("course_name") or "")
+        code = str(row.get("course_code") or name or "Course")
+        planned = 14 if "lab" in name.lower() else 40
+        conducted = int(row.get("conducted") or 0)
+        present = int(row.get("present") or 0)
+        remaining = max(planned - conducted, 0)
+        total_end = conducted + remaining
+        current = float(row.get("percentage") or (_pct(present, conducted) if conducted else 0))
+        if_attend_all = _pct(present + remaining, total_end) if total_end else current
+        can_miss = 0
+        for miss in range(remaining + 1):
+            if _pct(present + (remaining - miss), total_end) >= 75:
+                can_miss = miss
+            else:
+                break
+        if current < 75:
+            risk = "Critical"
+            warnings.append(f"{code} is already below 75%.")
+        elif can_miss <= 1:
+            risk = "High"
+            warnings.append(f"{code}: you can miss at most {can_miss} more period(s).")
+        elif can_miss <= 3:
+            risk = "Watch"
+        else:
+            risk = "Safe"
+        marks = by_course.get(code, [])
+        cats = [item for item in marks if str(item.get("assessment") or "").upper().startswith("CAT") and item.get("percentage") is not None]
+        assigns = [
+            item
+            for item in marks
+            if item.get("percentage") is not None
+            and ("assign" in str(item.get("assessment") or "").lower() or "lab" in str(item.get("assessment") or "").lower())
+        ]
+        cat_avg = round(sum(float(item["percentage"]) for item in cats) / len(cats), 1) if cats else None
+        asg_avg = round(sum(float(item["percentage"]) for item in assigns) / len(assigns), 1) if assigns else None
+        if cat_avg is not None and asg_avg is not None:
+            predicted = round(0.7 * cat_avg + 0.3 * asg_avg, 1)
+        else:
+            predicted = cat_avg
+        courses.append(
+            {
+                "course_code": code,
+                "course_name": name,
+                "current_attendance": current,
+                "remaining_classes": remaining,
+                "if_attend_all": if_attend_all,
+                "can_miss": can_miss,
+                "risk": risk,
+                "cat_average": cat_avg,
+                "predicted_internal": predicted,
+            }
+        )
+    counted = round(sum(item["current_attendance"] for item in courses) / len(courses), 1) if courses else 0
+    overall_attendance = round(float(overall), 1) if overall else counted
+    below = len([item for item in courses if item["risk"] == "Critical"])
+    if not courses:
+        summary = "No attendance rows are recorded for this account yet."
+    else:
+        summary = f"Overall attendance is {overall_attendance}%. {below} course(s) are below 75%."
+    return {
+        "summary": summary,
+        "warnings": warnings,
+        "courses": courses,
+        "overall_attendance": overall_attendance,
+    }
+
+
 def forecast_from_attendance(rows: list[dict]) -> dict[str, Any]:
     details = []
     for r in rows:

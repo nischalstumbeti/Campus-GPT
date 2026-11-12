@@ -17,12 +17,27 @@ type Course = {
   predicted_internal: number | null;
 };
 
-type Forecast = { summary: string; warnings: string[]; courses: Course[]; overall_attendance: number };
+type Forecast = {
+  summary: string;
+  warnings?: string[];
+  courses?: Course[];
+  overall_attendance?: number;
+  reading?: string;
+};
 
 function ForecastInner() {
   const [data, setData] = useState<Forecast | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
-    apiGet<Forecast>("/api/academic/forecast").then(setData).catch(() => setData(null));
+    apiGet<Forecast>("/api/academic/forecast")
+      .then((rows) => {
+        setData(rows);
+        setError("");
+      })
+      .catch((err) => {
+        setData(null);
+        setError(err instanceof Error ? err.message : "The forecast could not be loaded");
+      });
   }, []);
 
   return (
@@ -33,12 +48,15 @@ function ForecastInner() {
         <p className="text-sm text-gray-600 mb-6">
           Built from your database records — how many classes you can still miss, and predicted internals.
         </p>
+        {error ? <p className="text-sm text-rose-700 mb-4">{error}</p> : null}
+        {!data && !error ? <p className="text-sm text-gray-500">Loading your attendance records…</p> : null}
         {data && (
           <>
             <p className="p-4 rounded-2xl bg-primary/5 text-primary mb-4">{data.summary}</p>
-            {data.warnings.length > 0 && (
+            {data.reading ? <p className="mb-4 whitespace-pre-wrap text-sm text-gray-700">{data.reading}</p> : null}
+            {(data.warnings || []).length > 0 && (
               <ul className="mb-6 text-sm text-amber-800 list-disc pl-5">
-                {data.warnings.map((w) => <li key={w}>{w}</li>)}
+                {(data.warnings || []).map((w) => <li key={w}>{w}</li>)}
               </ul>
             )}
             <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white">
