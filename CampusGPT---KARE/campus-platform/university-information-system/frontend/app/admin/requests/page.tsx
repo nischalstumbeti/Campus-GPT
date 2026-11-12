@@ -7,27 +7,64 @@ import { apiFetch } from "@/lib/api";
 type Route = { id: number; name: string; steps: string[]; active: boolean };
 type Letter = { id: number; subject: string; body: string; name: string; step: string; status: string };
 
+type Office = { role: string; label: string; people: { id: number; name: string; department: string }[] };
+type Chosen = { role: string; userId: number; label: string };
+
 export default function AdminRequestsPage() {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [inbox, setInbox] = useState<Letter[]>([]);
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [chosen, setChosen] = useState<Chosen[]>([]);
+  const [officeRole, setOfficeRole] = useState("advisor");
+  const [personId, setPersonId] = useState("");
   const [name, setName] = useState("Bonafide");
-  const [steps, setSteps] = useState("advisor,hod,school_dean");
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
   const load = () => {
     apiFetch<{ items: Route[] }>("/api/v1/admin/request-routes").then((data) => setRoutes(data.items || [])).catch((e) => setErr(e.message));
     apiFetch<{ items: Letter[] }>("/api/v1/requests/inbox").then((data) => setInbox(data.items || [])).catch(() => setInbox([]));
+    apiFetch<{ items: Office[] }>("/api/v1/admin/request-offices").then((data) => {
+      const items = data.items || [];
+      setOffices(items);
+      setOfficeRole((current) => items.some((item) => item.role === current) ? current : items[0]?.role || "advisor");
+    }).catch((e) => setErr(e.message));
   };
 
   useEffect(() => { load(); }, []);
 
+  const people = offices.find((office) => office.role === officeRole)?.people || [];
+
+  const addOffice = () => {
+    const office = offices.find((item) => item.role === officeRole);
+    const person = people.find((item) => item.id === Number(personId));
+    if (!office || !person) {
+      setErr("Select the person for that office.");
+      return;
+    }
+    if (chosen.some((item) => item.role === office.role)) {
+      setErr("That office is already on this route.");
+      return;
+    }
+    setErr("");
+    setChosen((current) => [...current, { role: office.role, userId: person.id, label: `${office.label} · ${person.name}` }]);
+    setPersonId("");
+  };
+
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setErr("");
+    if (!chosen.length) {
+      setErr("Add the advisor, HoD, or school dean from the list.");
+      return;
+    }
     try {
-      await apiFetch("/api/v1/admin/request-routes", { method: "POST", body: JSON.stringify({ name, steps, active: true }) });
+      await apiFetch("/api/v1/admin/request-routes", {
+        method: "POST",
+        body: JSON.stringify({ name, steps: chosen.map((item) => `${item.role}:${item.userId}`).join(","), active: true }),
+      });
       setMsg("Route saved. Students can choose it when they write a letter.");
+      setChosen([]);
       load();
     } catch (error) {
       setErr(error instanceof Error ? error.message : "Could not save the route");
@@ -44,12 +81,36 @@ export default function AdminRequestsPage() {
     <AppShell>
       <section className="uis-panel mb-4">
         <h1 className="uis-panel-title">Request routes</h1>
-        <p className="px-4 pt-3 text-sm text-slate-600">A student letter moves through these offices in order. Use advisor, hod, school_dean, director, coe, or admin, separated by commas.</p>
-        <form onSubmit={save} className="p-4 grid md:grid-cols-3 gap-2 items-end">
-          {err ? <p className="text-sm text-red-600 md:col-span-3">{err}</p> : null}
-          {msg ? <p className="text-sm text-emerald-700 md:col-span-3">{msg}</p> : null}
-          <label className="text-xs text-slate-500">Name<input required className="mt-1 w-full border rounded px-2 py-1 text-sm" value={name} onChange={(e) => setName(e.target.value)} /></label>
-          <label className="text-xs text-slate-500">Offices<input required className="mt-1 w-full border rounded px-2 py-1 text-sm" value={steps} onChange={(e) => setSteps(e.target.value)} /></label>
+        <p className="px-4 pt-3 text-sm text-slate-600">A student letter moves through these offices in order. Pick the advisor, HoD, and school dean from the directory. Do not type the names.</p>
+        <form onSubmit={save} className="p-4 space-y-3">
+          {err ? <p className="text-sm text-red-600">{err}</p> : null}
+          {msg ? <p className="text-sm text-emerald-700">{msg}</p> : null}
+          <label className="block text-xs text-slate-500">Name
+            <input required className="mt-1 w-full border rounded px-2 py-1 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <div className="grid md:grid-cols-3 gap-2 items-end">
+            <label className="text-xs text-slate-500">Office
+              <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={officeRole} onChange={(e) => { setOfficeRole(e.target.value); setPersonId(""); }}>
+                {offices.map((office) => <option key={office.role} value={office.role}>{office.label}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-slate-500">Person
+              <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={personId} onChange={(e) => setPersonId(e.target.value)}>
+                <option value="">Select</option>
+                {people.map((person) => <option key={person.id} value={person.id}>{person.name}{person.department ? ` · ${person.department}` : ""}</option>)}
+              </select>
+            </label>
+            <button type="button" className="px-3 py-1.5 rounded border text-sm" onClick={addOffice}>Add office</button>
+          </div>
+          <ol className="text-sm list-decimal pl-5">
+            {chosen.map((item, index) => (
+              <li key={item.role} className="py-1">
+                {item.label}
+                <button type="button" className="ml-2 text-xs underline" onClick={() => setChosen((current) => current.filter((_, at) => at !== index))}>Remove</button>
+              </li>
+            ))}
+            {!chosen.length ? <li className="list-none -ml-5 text-slate-500">No offices added yet.</li> : null}
+          </ol>
           <button className="px-3 py-1.5 rounded bg-[#0B2A4A] text-white text-sm">Save route</button>
         </form>
         <ul className="px-4 pb-4 text-sm">
