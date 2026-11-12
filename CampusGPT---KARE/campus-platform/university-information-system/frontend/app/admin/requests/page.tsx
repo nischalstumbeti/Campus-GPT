@@ -7,13 +7,23 @@ import { apiFetch } from "@/lib/api";
 type Route = { id: number; name: string; steps: string[]; active: boolean };
 type Letter = { id: number; subject: string; body: string; name: string; step: string; status: string };
 
-type Office = { role: string; label: string; people: { id: number; name: string; department: string }[] };
+const OFFICES: { role: string; label: string; roles: string[] }[] = [
+  { role: "advisor", label: "Advisor", roles: ["faculty", "hod"] },
+  { role: "hod", label: "HoD", roles: ["hod"] },
+  { role: "school_dean", label: "School dean", roles: ["school_dean", "faculty"] },
+  { role: "director", label: "Director", roles: ["director", "university_admin"] },
+  { role: "coe", label: "COE", roles: ["coe", "university_admin"] },
+  { role: "admin", label: "Admin", roles: ["university_admin", "admin", "super_admin", "operator", "developer"] },
+];
+
+type Person = { id: number; name: string; department: string; role: string };
+
 type Chosen = { role: string; userId: number; label: string };
 
 export default function AdminRequestsPage() {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [inbox, setInbox] = useState<Letter[]>([]);
-  const [offices, setOffices] = useState<Office[]>([]);
+  const [directory, setDirectory] = useState<Person[]>([]);
   const [chosen, setChosen] = useState<Chosen[]>([]);
   const [officeRole, setOfficeRole] = useState("advisor");
   const [personId, setPersonId] = useState("");
@@ -22,24 +32,46 @@ export default function AdminRequestsPage() {
   const [msg, setMsg] = useState("");
 
   const load = () => {
-    apiFetch<{ items: Route[] }>("/api/v1/admin/request-routes").then((data) => setRoutes(data.items || [])).catch((e) => setErr(e.message));
+    apiFetch<{ items: Route[] }>("/api/v1/admin/request-routes")
+      .then((data) => setRoutes(data.items || []))
+      .catch(() => setRoutes([]));
     apiFetch<{ items: Letter[] }>("/api/v1/requests/inbox").then((data) => setInbox(data.items || [])).catch(() => setInbox([]));
-    apiFetch<{ items: Office[] }>("/api/v1/admin/request-offices").then((data) => {
-      const items = data.items || [];
-      setOffices(items);
-      setOfficeRole((current) => items.some((item) => item.role === current) ? current : items[0]?.role || "advisor");
-    }).catch((e) => setErr(e.message));
+    const roles = Array.from(new Set(OFFICES.flatMap((office) => office.roles)));
+    Promise.all(
+      roles.map((role) =>
+        apiFetch<{ items: { id: number; full_name?: string; username?: string; department_code?: string; role?: string }[] }>(
+          `/api/v1/admin/users?role=${role}&limit=200`
+        )
+          .then((data) => data.items || [])
+          .catch(() => [])
+      )
+    ).then((groups) => {
+      const seen = new Set<number>();
+      const people: Person[] = [];
+      groups.flat().forEach((item) => {
+        if (seen.has(item.id)) return;
+        seen.add(item.id);
+        people.push({
+          id: item.id,
+          name: item.full_name || item.username || "User",
+          department: item.department_code || "",
+          role: item.role || "",
+        });
+      });
+      setDirectory(people);
+      if (!people.length) setErr("No faculty, HoD, or admin accounts were found in Users.");
+    });
   };
 
   useEffect(() => { load(); }, []);
 
-  const people = offices.find((office) => office.role === officeRole)?.people || [];
+  const office = OFFICES.find((item) => item.role === officeRole) || OFFICES[0];
+  const people = directory.filter((person) => office.roles.includes(person.role));
 
   const addOffice = () => {
-    const office = offices.find((item) => item.role === officeRole);
     const person = people.find((item) => item.id === Number(personId));
-    if (!office || !person) {
-      setErr("Select the person for that office.");
+    if (!person) {
+      setErr(people.length ? "Select the person for that office." : `No ${office.label} account is in Users yet.`);
       return;
     }
     if (chosen.some((item) => item.role === office.role)) {
@@ -67,7 +99,8 @@ export default function AdminRequestsPage() {
       setChosen([]);
       load();
     } catch (error) {
-      setErr(error instanceof Error ? error.message : "Could not save the route");
+      const text = error instanceof Error ? error.message : "Could not save the route";
+      setErr(text === "Not Found" ? "The route could not be saved because the university API is still on the previous build. The people list is ready; save again after that API restarts." : text);
     }
   };
 
@@ -91,12 +124,12 @@ export default function AdminRequestsPage() {
           <div className="grid md:grid-cols-3 gap-2 items-end">
             <label className="text-xs text-slate-500">Office
               <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={officeRole} onChange={(e) => { setOfficeRole(e.target.value); setPersonId(""); }}>
-                {offices.map((office) => <option key={office.role} value={office.role}>{office.label}</option>)}
+                {OFFICES.map((item) => <option key={item.role} value={item.role}>{item.label}</option>)}
               </select>
             </label>
             <label className="text-xs text-slate-500">Person
               <select className="mt-1 w-full border rounded px-2 py-1 text-sm" value={personId} onChange={(e) => setPersonId(e.target.value)}>
-                <option value="">Select</option>
+                <option value="">{people.length ? "Select" : "No account for this office"}</option>
                 {people.map((person) => <option key={person.id} value={person.id}>{person.name}{person.department ? ` · ${person.department}` : ""}</option>)}
               </select>
             </label>

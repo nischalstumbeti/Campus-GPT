@@ -78,8 +78,8 @@ async def _checked_steps(db: AsyncSession, raw: str) -> str:
         if not user_id:
             raise HTTPException(status_code=400, detail=f"Select the {LABELS[role].lower()} from the list")
         person = people.get(user_id)
-        if not person or not person.is_active or person.role not in OFFICE_ROLES[role]:
-            raise HTTPException(status_code=400, detail=f"Select a {LABELS[role].lower()} from the directory")
+        if not person or not person.is_active or person.role == "student":
+            raise HTTPException(status_code=400, detail=f"Select a staff member for {LABELS[role].lower()}")
         stored.append(f"{role}:{user_id}")
     return ",".join(stored)
 
